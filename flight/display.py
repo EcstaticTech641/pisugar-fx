@@ -1,0 +1,333 @@
+"""Flight radar display rendering engine."""
+
+import logging
+import math
+from datetime import datetime
+from typing import List, Dict, Any, Tuple
+
+from PIL import Image, ImageDraw, ImageFont
+
+logger = logging.getLogger(__name__)
+
+
+class FlightRadarScreen:
+    """Renders a radar-style display of aircraft around a location."""
+    
+    # Display dimensions
+    WIDTH = 240
+    HEIGHT = 280
+    HEADER_HEIGHT = 36
+    MAP_HEIGHT = HEIGHT - HEADER_HEIGHT  # 244
+    
+    # Radar geometry
+    CENTER_X = WIDTH // 2  # 120
+    CENTER_Y = HEADER_HEIGHT + MAP_HEIGHT // 2  # 158
+    
+    # Range rings in miles
+    RANGE_RINGS = [50, 100]
+    
+    # Calculate pixels per mile based on 100-mile fitting ~90% of screen
+    # For 100 miles: (244 / 2 - 10) / 100 ≈ 1.12 px/mi
+    PX_PER_MILE = (min(WIDTH, MAP_HEIGHT) // 2 - 10) / 100.0
+    
+    # Colors (RGB tuples)
+    C_BG = (6, 11, 16)           # Very dark blue
+    C_HEADER = (11, 20, 32)      # Slightly lighter blue
+    C_RING_50 = (13, 42, 64)     # Ring color for 50mi
+    C_RING_100 = (20, 60, 90)    # Ring color for 100mi
+    C_RING_LABEL = (40, 90, 120) # Ring label color
+    C_CROSSHAIR = (0, 229, 255)  # Cyan
+    C_AIRCRAFT_AIR = (0, 229, 255)      # Cyan for airborne
+    C_AIRCRAFT_GND = (255, 107, 53)     # Orange for ground
+    C_CALLSIGN = (200, 223, 240)        # Light cyan
+    C_HEADER_TEXT = (0, 229, 255)       # Cyan
+    C_HEADER_DIM = (74, 112, 144)       # Dimmed text
+    C_DIVIDER = (26, 58, 92)            # Divider line
+    
+    def __init__(
+        self,
+        location_name: str,
+        latitude: float,
+        longitude: float,
+        radius_miles: int = 100,
+    ):
+        self.location_name = location_name
+        self.center_lat = latitude
+        self.center_lon = longitude
+        self.radius_miles = radius_miles
+        self.aircraft: List[Dict[str, Any]] = []
+        self.timestamp = datetime.now()
+        self._fonts = self._load_fonts()
+    
+    def _load_fonts(self) -> Dict[str, ImageFont.FreeTypeFont]:
+        """Load TrueType fonts, falling back to default if needed."""
+        fonts = {}
+        font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        ]
+        
+        for size_name, size_px in [("small", 8), ("medium", 11), ("large", 14)]:
+            for path in font_paths:
+                try:
+                    fonts[size_name] = ImageFont.truetype(path, size_px)
+                    break
+                except (OSError, IOError):
+                    continue
+            else:
+                # Fallback to default
+                fonts[size_name] = ImageFont.load_default()
+        
+        return fonts
+    
+    def set_aircraft(self, flights: List[Dict[str, Any]]) -> None:
+        """Update aircraft list and timestamp.
+        
+        Args:
+            flights: List of flight dictionaries from API
+        """
+        self.aircraft = flights
+        self.timestamp = datetime.now()
+    
+    def _geo_to_px(self, lat: float, lon: float) -> Tuple[int, int]:
+        """Convert lat/lon to pixel coordinates relative to map center.
+        
+        Args:
+            lat: Latitude
+            lon: Longitude
+            
+        Returns:
+            (x, y) pixel coordinates
+        """
+        dlat = lat - self.center_lat
+        dlon = lon - self.center_lon
+        
+        # Mile per degree calculations
+        mi_per_deg_lat = 69.0
+        mi_per_deg_lon = 69.0 * math.cos(math.radians(self.center_lat))
+        
+        # Convert to miles then to pixels
+        dx = dlon * mi_per_deg_lon * self.PX_PER_MILE
+        dy = -dlat * mi_per_deg_lat * self.PX_PER_MILE  # screen y is inverted
+        
+        return int(self.CENTER_X + dx), int(self.CENTER_Y + dy)
+    
+    def _draw_aircraft_arrow(
+        self,
+        draw: ImageDraw.ImageDraw,
+        x: int,
+        y: int,
+        heading: float,
+        color: Tuple[int, int, int],
+        size: int = 5,
+    ) -> None:
+        """Draw a directional arrow for an aircraft.
+        
+        Args:
+            draw: PIL ImageDraw object
+            x, y: Position in pixels
+            heading: Heading in degrees (0-359)
+            color: RGB color tuple
+            size: Size of arrow in pixels
+        """
+        rad = math.radians(heading - 90)
+        
+        # Triangle pointing in heading direction
+        tip_x = x + size * math.cos(rad)
+        tip_y = y + size * math.sin(rad)
+        
+        # Base corners
+        left_rad = rad + math.radians(140)
+        right_rad = rad - math.radians(140)
+        
+        lx = x + (size * 0.6) * math.cos(left_rad)
+        ly = y + (size * 0.6) * math.sin(left_rad)
+        rx = x + (size * 0.6) * math.cos(right_rad)
+        ry = y + (size * 0.6) * math.sin(right_rad)
+        
+        # Draw filled triangle
+        draw.polygon([(tip_x, tip_y), (lx, ly), (x, y), (rx, ry)], fill=color)
+    
+    def render(self) -> Image.Image:
+        """Generate radar display image.
+        
+        Returns:
+            PIL Image (RGB, 240x280)
+        """
+        # Create background
+        img = Image.new("RGB", (self.WIDTH, self.HEIGHT), color=self.C_BG)
+        draw = ImageDraw.Draw(img)
+        
+        # Draw header background
+        draw.rectangle(
+            [(0, 0), (self.WIDTH, self.HEADER_HEIGHT)],
+            fill=self.C_HEADER,
+        )
+        
+        # Draw divider line
+        draw.line(
+            [(0, self.HEADER_HEIGHT), (self.WIDTH, self.HEADER_HEIGHT)],
+            fill=self.C_DIVIDER,
+            width=1,
+        )
+        
+        # Draw header text
+        self._draw_header(draw)
+        
+        # Draw radar background (range rings and crosshairs)
+        self._draw_radar_background(draw)
+        
+        # Draw aircraft
+        self._draw_aircraft(draw)
+        
+        return img
+    
+    def _draw_header(self, draw: ImageDraw.ImageDraw) -> None:
+        """Draw header with location, time, and aircraft count."""
+        # Location name (left-aligned)
+        draw.text(
+            (4, 4),
+            self.location_name,
+            fill=self.C_HEADER_TEXT,
+            font=self._fonts["small"],
+        )
+        
+        # Time (right-aligned, just show HH:MM)
+        time_str = self.timestamp.strftime("%H:%M")
+        time_bbox = draw.textbbox((0, 0), time_str, font=self._fonts["small"])
+        time_width = time_bbox[2] - time_bbox[0]
+        draw.text(
+            (self.WIDTH - 4 - time_width, 4),
+            time_str,
+            fill=self.C_HEADER_DIM,
+            font=self._fonts["small"],
+        )
+        
+        # Aircraft count (center)
+        count_str = f"{len(self.aircraft)} aircraft"
+        count_bbox = draw.textbbox((0, 0), count_str, font=self._fonts["small"])
+        count_width = count_bbox[2] - count_bbox[0]
+        draw.text(
+            ((self.WIDTH - count_width) // 2, 4 + 10),
+            count_str,
+            fill=self.C_HEADER_DIM,
+            font=self._fonts["small"],
+        )
+    
+    def _draw_radar_background(self, draw: ImageDraw.ImageDraw) -> None:
+        """Draw range rings and crosshairs."""
+        # Draw range rings
+        for ring_miles in self.RANGE_RINGS:
+            radius_px = int(ring_miles * self.PX_PER_MILE)
+            color = self.C_RING_50 if ring_miles == 50 else self.C_RING_100
+            
+            # Draw circle
+            draw.ellipse(
+                [
+                    self.CENTER_X - radius_px,
+                    self.CENTER_Y - radius_px,
+                    self.CENTER_X + radius_px,
+                    self.CENTER_Y + radius_px,
+                ],
+                outline=color,
+                width=1,
+            )
+            
+            # Draw label at top of ring
+            label = f"{ring_miles}mi"
+            label_y = self.CENTER_Y - radius_px - 10
+            label_bbox = draw.textbbox((0, 0), label, font=self._fonts["small"])
+            label_width = label_bbox[2] - label_bbox[0]
+            draw.text(
+                ((self.WIDTH - label_width) // 2, label_y),
+                label,
+                fill=self.C_RING_LABEL,
+                font=self._fonts["small"],
+            )
+        
+        # Draw crosshairs (center plus sign)
+        cross_size = 12
+        draw.line(
+            [
+                (self.CENTER_X - cross_size, self.CENTER_Y),
+                (self.CENTER_X + cross_size, self.CENTER_Y),
+            ],
+            fill=self.C_CROSSHAIR,
+            width=1,
+        )
+        draw.line(
+            [
+                (self.CENTER_X, self.CENTER_Y - cross_size),
+                (self.CENTER_X, self.CENTER_Y + cross_size),
+            ],
+            fill=self.C_CROSSHAIR,
+            width=1,
+        )
+        
+        # Center dot
+        draw.ellipse(
+            [
+                self.CENTER_X - 2,
+                self.CENTER_Y - 2,
+                self.CENTER_X + 2,
+                self.CENTER_Y + 2,
+            ],
+            fill=self.C_CROSSHAIR,
+        )
+    
+    def _draw_aircraft(self, draw: ImageDraw.ImageDraw) -> None:
+        """Draw aircraft as directional arrows."""
+        if not self.aircraft:
+            return
+        
+        # Sort by altitude (highest first) so they draw in good order
+        sorted_aircraft = sorted(
+            self.aircraft,
+            key=lambda a: a.get("alt_ft", 0),
+            reverse=True,
+        )
+        
+        # Draw each aircraft
+        for idx, flight in enumerate(sorted_aircraft):
+            # Get screen position
+            px, py = self._geo_to_px(flight["lat"], flight["lon"])
+            
+            # Check if on screen (with margin)
+            margin = 20
+            if not (
+                -margin < px < self.WIDTH + margin
+                and self.HEADER_HEIGHT - margin < py < self.HEIGHT + margin
+            ):
+                continue
+            
+            # Choose color based on ground/air status
+            color = (
+                self.C_AIRCRAFT_GND
+                if flight.get("on_ground", False)
+                else self.C_AIRCRAFT_AIR
+            )
+            
+            # Draw arrow
+            self._draw_aircraft_arrow(
+                draw,
+                px,
+                py,
+                flight.get("heading", 0),
+                color,
+                size=5,
+            )
+            
+            # Draw callsign label for top 3 aircraft (or all if < 3 on screen)
+            if idx < 3 and flight.get("call", "—") != "—":
+                label_y = py - 10
+                label = flight["call"][:6]  # Truncate to fit
+                draw.text(
+                    (px - 8, label_y),
+                    label,
+                    fill=self.C_CALLSIGN,
+                    font=self._fonts["small"],
+                )

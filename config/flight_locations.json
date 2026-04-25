@@ -1,0 +1,35 @@
+{
+  "locations": [
+    {
+      "name": "OKC (Will Rogers)",
+      "latitude": 35.3898,
+      "longitude": -97.6007,
+      "radius_miles": 100
+    },
+    {
+      "name": "DFW (Dallas/Fort Worth)",
+      "latitude": 32.8975,
+      "longitude": -97.0380,
+      "radius_miles": 100
+    },
+    {
+      "name": "Tulsa International",
+      "latitude": 36.1984,
+      "longitude": -95.8881,
+      "radius_miles": 75
+    },
+    {
+      "name": "Kansas City",
+      "latitude": 39.3041,
+      "longitude": -94.7144,
+      "radius_miles": 100
+    }
+  ],
+  "settings": {
+    "display_duration_seconds": 30,
+    "refresh_interval_seconds": 10,
+    "brightness": 100,
+    "rotation": 0,
+    "random_location_enabled": false
+  }
+}
