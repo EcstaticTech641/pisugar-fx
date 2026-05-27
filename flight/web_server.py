@@ -258,7 +258,7 @@ def _html_index() -> str:
         "\n"
         "  <nav>\n"
         '    <a href="/map">&#x1F5FA;&#xFE0F;&nbsp; Interactive Map</a>\n'
-        '    <a href="/aircraft.json">&#x1F4E1;&nbsp; Aircraft JSON</a>\n'
+        '    <a href="/aircraft.json">&#x1F4E1;&nbsp; Raw JSON</a>\n'
         '    <a href="/status">&#x2139;&#xFE0F;&nbsp; Status</a>\n'
         "  </nav>\n"
         "\n"
