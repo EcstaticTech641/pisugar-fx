@@ -112,7 +112,7 @@ def load_config(config_path: Optional[str] = None) -> FlightTrackerConfig:
         rotation=int(settings_data.get("rotation", 0)),
         random_location_enabled=bool(settings_data.get("random_location_enabled", False)),
         source=str(settings_data.get("source", "api")),
-        web_server_enabled=bool(settings_data.get("web_server_enabled", False)),
+        web_server_enabled=bool(settings_data.get("web_server_enabled", True)),
         web_server_port=int(settings_data.get("web_server_port", 5000)),
     )
     
