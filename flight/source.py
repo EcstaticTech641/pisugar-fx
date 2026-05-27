@@ -37,16 +37,22 @@ def _normalize(a: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     return {
         "icao": a.get("hex", "").upper(),
+        "hex": a.get("hex", "").upper(),
         "call": (a.get("flight") or a.get("r") or "—").strip(),
         "lat": a.get("lat"),
         "lon": a.get("lon"),
         "alt_ft": alt_ft,
         "speed": int(a.get("gs") or 0),
+        "gs": int(a.get("gs") or 0),
         "heading": int(a.get("track") or 0),
         "type": a.get("t", ""),
+        "category": a.get("category") or a.get("t", ""),
         "reg": a.get("r", ""),
         "squawk": a.get("squawk") or "",
         "on_ground": on_ground,
+        "messages": a.get("messages"),
+        "rssi": a.get("rssi"),
+        "seen": a.get("seen"),
     }
 
 
@@ -94,6 +100,7 @@ class LocalSource:
                 continue
             dist = _haversine_miles(latitude, longitude, flight["lat"], flight["lon"])
             if dist <= radius_miles:
+                flight["distance_miles"] = dist
                 flights.append(flight)
 
         logger.info(f"LocalSource: {len(flights)} aircraft within {radius_miles}mi of {latitude:.2f},{longitude:.2f}")

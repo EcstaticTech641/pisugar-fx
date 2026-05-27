@@ -1,11 +1,21 @@
 """Flight data API client for airplanes.live service."""
 
 import logging
+import math
 import time
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 
 import requests
+
+def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate distance in miles between two lat/lon points."""
+    R = 3958.8
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 logger = logging.getLogger(__name__)
 
@@ -120,16 +130,23 @@ class FlightAPI:
                 
                 flight = {
                     "icao": a.get("hex", "").upper(),
+                    "hex": a.get("hex", "").upper(),
                     "call": (a.get("flight") or a.get("r") or "—").strip(),
                     "lat": a.get("lat"),
                     "lon": a.get("lon"),
                     "alt_ft": alt_ft,
                     "speed": int(a.get("gs") or 0),
+                    "gs": int(a.get("gs") or 0),
                     "heading": int(a.get("track") or 0),
                     "type": a.get("t", ""),
+                    "category": a.get("category") or a.get("t", ""),
                     "reg": a.get("r", ""),
                     "squawk": a.get("squawk") or "",
                     "on_ground": on_ground,
+                    "messages": a.get("messages"),
+                    "rssi": a.get("rssi"),
+                    "seen": a.get("seen"),
+                    "distance_miles": _haversine_miles(latitude, longitude, a.get("lat"), a.get("lon")),
                 }
                 flights.append(flight)
             
