@@ -89,6 +89,7 @@ class FlightTracker:
         if self.has_display and self.display_board:
             try:
                 self.display_board.set_backlight(0)
+                self.display_board.set_rgb(0, 0, 0)
                 logger.info("Display backlight off")
             except Exception as e:
                 logger.error(f"Error turning off display: {e}")
@@ -180,6 +181,25 @@ class FlightTracker:
         except Exception as e:
             logger.error(f"Failed to display image: {e}", exc_info=True)
 
+    def _update_led(self, aircraft_count: int) -> None:
+        """Map aircraft count to RGB LED color as a density indicator."""
+        if not self.has_display or not self.display_board:
+            return
+    try:
+        if aircraft_count == 0:
+            r, g, b = 0, 0, 255        #  blue — nothing around
+        elif aircraft_count <= 5:
+            r, g, b = 0, 255, 0       # green
+        elif aircraft_count <= 15:
+            r, g, b = 255, 255, 0     # yellow
+        elif aircraft_count <= 30:
+            r, g, b = 255, 80, 0      # orange
+        else:
+            r, g, b = 255, 0, 0       # red — busy sky
+        self.display_board.set_rgb(r, g, b)
+    except Exception as e:
+        logger.warning(f"LED update failed: {e}")
+
     def _should_cycle_location(self) -> bool:
         """Check if it's time to cycle to next location."""
         elapsed = time.time() - self.location_start_time
@@ -268,6 +288,7 @@ class FlightTracker:
                         if self.current_screen:
                             image = self.current_screen.render()
                             self._display_image(image)
+                            self._update_led(len(self.current_screen.aircraft))
                             last_displayed_time = current_time
                         else:
                             logger.warning("No current screen to display")
