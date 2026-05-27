@@ -23,13 +23,6 @@ class FlightRadarScreen:
     CENTER_X = WIDTH // 2  # 120
     CENTER_Y = HEADER_HEIGHT + MAP_HEIGHT // 2  # 158
     
-    # Range rings in miles
-    RANGE_RINGS = [50, 100]
-    
-    # Calculate pixels per mile based on 100-mile fitting ~90% of screen
-    # For 100 miles: (244 / 2 - 10) / 100 ≈ 1.12 px/mi
-    PX_PER_MILE = (min(WIDTH, MAP_HEIGHT) // 2 - 10) / 100.0
-    
     # Colors (RGB tuples)
     C_BG = (6, 11, 16)           # Very dark blue
     C_HEADER = (11, 20, 32)      # Slightly lighter blue
@@ -84,6 +77,13 @@ class FlightRadarScreen:
         
         return fonts
     
+    @property
+    def PX_PER_MILE(self) -> float:
+        return (min(self.WIDTH, self.MAP_HEIGHT) // 2 - 10) / float(self.radius_miles)
+
+    def _ring_miles(self) -> List[float]:
+        return [self.radius_miles / 2.0, float(self.radius_miles)]
+
     def set_aircraft(self, flights: List[Dict[str, Any]]) -> None:
         """Update aircraft list and timestamp.
         
@@ -150,7 +150,13 @@ class FlightRadarScreen:
         ry = y + (size * 0.6) * math.sin(right_rad)
         
         # Draw filled triangle
-        draw.polygon([(tip_x, tip_y), (lx, ly), (x, y), (rx, ry)], fill=color)
+        draw.polygon([(tip_x, tip_y), (lx, ly), (rx, ry)], fill=color)
+
+        # Draw stem
+        stem_len = size * 0.55
+        stem_x = x - stem_len * math.cos(rad)
+        stem_y = y - stem_len * math.sin(rad)
+        draw.line((stem_x, stem_y, x, y), fill=color, width=1)
     
     def render(self) -> Image.Image:
         """Generate radar display image.
@@ -221,9 +227,10 @@ class FlightRadarScreen:
     def _draw_radar_background(self, draw: ImageDraw.ImageDraw) -> None:
         """Draw range rings and crosshairs."""
         # Draw range rings
-        for ring_miles in self.RANGE_RINGS:
+        rings = self._ring_miles()
+        for idx, ring_miles in enumerate(rings):
             radius_px = int(ring_miles * self.PX_PER_MILE)
-            color = self.C_RING_50 if ring_miles == 50 else self.C_RING_100
+            color = self.C_RING_50 if idx == 0 else self.C_RING_100
             
             # Draw circle
             draw.ellipse(
@@ -279,6 +286,14 @@ class FlightRadarScreen:
             fill=self.C_CROSSHAIR,
         )
     
+    def _clamp_label_pos(self, draw: ImageDraw.ImageDraw, text: str, x: int, y: int, font: Any) -> Tuple[int, int]:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        nx = max(0, min(x - w // 2, self.WIDTH - w - 1))
+        ny = max(self.HEADER_HEIGHT + 1, min(y - h - 2, self.HEIGHT - h - 1))
+        return int(nx), int(ny)
+
     def _draw_aircraft(self, draw: ImageDraw.ImageDraw) -> None:
         """Draw aircraft as directional arrows."""
         if not self.aircraft:
@@ -323,10 +338,10 @@ class FlightRadarScreen:
             
             # Draw callsign label for top 3 aircraft (or all if < 3 on screen)
             if idx < 3 and flight.get("call", "—") != "—":
-                label_y = py - 10
                 label = flight["call"][:6]  # Truncate to fit
+                lx, ly = self._clamp_label_pos(draw, label, px, py, self._fonts["small"])
                 draw.text(
-                    (px - 8, label_y),
+                    (lx, ly),
                     label,
                     fill=self.C_CALLSIGN,
                     font=self._fonts["small"],
