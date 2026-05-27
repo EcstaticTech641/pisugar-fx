@@ -12,7 +12,22 @@ from flight.display import FlightRadarScreen
 
 logger = logging.getLogger(__name__)
 
-
+def _get_location_from_ip():
+    """Auto-detect location from IP address for portable antenna mode."""
+    try:
+        import urllib.request
+        import json
+        with urllib.request.urlopen("https://ipapi.co/json/", timeout=5) as r:
+            data = json.load(r)
+            lat = data["latitude"]
+            lon = data["longitude"]
+            city = data.get("city", "Unknown")
+            logger.info(f"Auto-detected location: {city} ({lat:.4f}, {lon:.4f})")
+            return lat, lon, city
+    except Exception as e:
+        logger.warning(f"IP geolocation failed: {e} — using fallback coordinates")
+        return 36.1156, -97.0584, "Stillwater"
+    
 class FlightTracker:
     """Main flight tracker application controller."""
 
@@ -34,6 +49,19 @@ class FlightTracker:
         else:
             self.api = FlightAPI(cache_ttl_seconds=self.settings.refresh_interval_seconds)
             logger.info("Using API source (airplanes.live)")
+        if source_type == "local":
+            lat, lon, city = _get_location_from_ip()
+            from flight.config import FlightLocation
+            self.locations = [
+                FlightLocation(
+                    name=city,
+                    latitude=lat,
+                    longitude=lon,
+                    radius_miles=150,
+                )
+            ]
+            logger.info(f"Antenna mode: single location '{city}' set automatically")
+
 
         # State management
         self.current_location_index = 0

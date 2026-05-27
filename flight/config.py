@@ -35,8 +35,9 @@ class FlightTrackerSettings:
     display_duration_seconds: int = 30
     refresh_interval_seconds: int = 10
     brightness: int = 100
-    rotation: int = 0  # Display rotation: 0, 90, 180, 270
+    rotation: int = 0
     random_location_enabled: bool = False
+    source: str = "api"
 
 
 @dataclass
@@ -97,7 +98,8 @@ def load_config(config_path: Optional[str] = None) -> FlightTrackerConfig:
             continue
     
     if not locations:
-        raise ValueError("No valid locations found in configuration")
+        logger.info("No locations in config — antenna mode will auto-detect")
+
     
     # Parse settings
     settings_data = data.get("settings", {})
@@ -107,6 +109,7 @@ def load_config(config_path: Optional[str] = None) -> FlightTrackerConfig:
         brightness=int(settings_data.get("brightness", 100)),
         rotation=int(settings_data.get("rotation", 0)),
         random_location_enabled=bool(settings_data.get("random_location_enabled", False)),
+        source=str(settings_data.get("source", "api")),
     )
     
     logger.info(f"Loaded configuration: {len(locations)} locations")
