@@ -124,6 +124,7 @@ class FlightRadarScreen:
         heading: float,
         color: Tuple[int, int, int],
         size: int = 5,
+        is_ghost: bool = False,
     ) -> None:
         """Draw a directional arrow for an aircraft.
         
@@ -133,6 +134,7 @@ class FlightRadarScreen:
             heading: Heading in degrees (0-359)
             color: RGB color tuple
             size: Size of arrow in pixels
+            is_ghost: Render as a hollow dashed arrow for predicted position
         """
         rad = math.radians(heading - 90)
         
@@ -149,14 +151,25 @@ class FlightRadarScreen:
         rx = x + (size * 0.6) * math.cos(right_rad)
         ry = y + (size * 0.6) * math.sin(right_rad)
         
-        # Draw filled triangle
-        draw.polygon([(tip_x, tip_y), (lx, ly), (rx, ry)], fill=color)
+        if is_ghost:
+            # Hollow arrow outline
+            draw.polygon([(tip_x, tip_y), (lx, ly), (rx, ry)], outline=color)
+            
+            # Dashed circle
+            r = size + 4
+            draw.arc([x-r, y-r, x+r, y+r], 0, 45, fill=color)
+            draw.arc([x-r, y-r, x+r, y+r], 90, 135, fill=color)
+            draw.arc([x-r, y-r, x+r, y+r], 180, 225, fill=color)
+            draw.arc([x-r, y-r, x+r, y+r], 270, 315, fill=color)
+        else:
+            # Draw filled triangle
+            draw.polygon([(tip_x, tip_y), (lx, ly), (rx, ry)], fill=color)
 
-        # Draw stem
-        stem_len = size * 0.55
-        stem_x = x - stem_len * math.cos(rad)
-        stem_y = y - stem_len * math.sin(rad)
-        draw.line((stem_x, stem_y, x, y), fill=color, width=1)
+            # Draw stem
+            stem_len = size * 0.55
+            stem_x = x - stem_len * math.cos(rad)
+            stem_y = y - stem_len * math.sin(rad)
+            draw.line((stem_x, stem_y, x, y), fill=color, width=1)
     
     def render(self) -> Image.Image:
         """Generate radar display image.
@@ -294,6 +307,29 @@ class FlightRadarScreen:
         ny = max(self.HEADER_HEIGHT + 1, min(y - h - 2, self.HEIGHT - h - 1))
         return int(nx), int(ny)
 
+    def _draw_trail(self, draw: ImageDraw.ImageDraw, flight: Dict[str, Any], trail: List[Dict[str, Any]]) -> None:
+        """Draw history trail for an aircraft fading into background."""
+        base_color = self.C_AIRCRAFT_GND if flight.get("on_ground", False) else self.C_AIRCRAFT_AIR
+        if flight.get("ghost", False):
+            base_color = (0, 80, 89)
+            
+        points = []
+        for p in trail:
+            px, py = self._geo_to_px(p["lat"], p["lon"])
+            points.append((px, py))
+            
+        px, py = self._geo_to_px(flight["lat"], flight["lon"])
+        points.append((px, py))
+        
+        num_segs = len(points) - 1
+        for i in range(num_segs):
+            ratio = (i + 1) / float(num_segs)
+            r = int(self.C_BG[0] + (base_color[0] - self.C_BG[0]) * ratio)
+            g = int(self.C_BG[1] + (base_color[1] - self.C_BG[1]) * ratio)
+            b = int(self.C_BG[2] + (base_color[2] - self.C_BG[2]) * ratio)
+            
+            draw.line([points[i], points[i+1]], fill=(r, g, b), width=1)
+
     def _draw_aircraft(self, draw: ImageDraw.ImageDraw) -> None:
         """Draw aircraft as directional arrows."""
         if not self.aircraft:
@@ -305,6 +341,13 @@ class FlightRadarScreen:
             key=lambda a: a.get("alt_ft", 0),
             reverse=True,
         )
+        
+        # Draw trails first (underneath blips) if < 20 aircraft
+        if len(self.aircraft) < 20:
+            for flight in sorted_aircraft:
+                trail = flight.get("trail", [])
+                if len(trail) > 0:
+                    self._draw_trail(draw, flight, trail)
         
         # Draw each aircraft
         for idx, flight in enumerate(sorted_aircraft):
@@ -318,13 +361,23 @@ class FlightRadarScreen:
                 and self.HEADER_HEIGHT - margin < py < self.HEIGHT + margin
             ):
                 continue
+                
+            is_ghost = flight.get("ghost", False)
             
-            # Choose color based on ground/air status
-            color = (
-                self.C_AIRCRAFT_GND
-                if flight.get("on_ground", False)
-                else self.C_AIRCRAFT_AIR
-            )
+            # Ghost boundary check: disappear immediately when crossing radius ring
+            if is_ghost:
+                dist_px = math.sqrt((px - self.CENTER_X)**2 + (py - self.CENTER_Y)**2)
+                max_radius_px = self.radius_miles * self.PX_PER_MILE
+                if dist_px > max_radius_px:
+                    continue
+            
+            # Choose color
+            if is_ghost:
+                color = (0, 80, 89)
+            elif flight.get("on_ground", False):
+                color = self.C_AIRCRAFT_GND
+            else:
+                color = self.C_AIRCRAFT_AIR
             
             # Draw arrow
             self._draw_aircraft_arrow(
@@ -334,10 +387,11 @@ class FlightRadarScreen:
                 flight.get("heading", 0),
                 color,
                 size=5,
+                is_ghost=is_ghost,
             )
             
             # Draw callsign label for top 3 aircraft (or all if < 3 on screen)
-            if idx < 3 and flight.get("call", "—") != "—":
+            if not is_ghost and idx < 3 and flight.get("call", "—") != "—":
                 label = flight["call"][:6]  # Truncate to fit
                 lx, ly = self._clamp_label_pos(draw, label, px, py, self._fonts["small"])
                 draw.text(

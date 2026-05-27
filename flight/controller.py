@@ -70,6 +70,14 @@ class FlightTracker:
         self.running = False
         self.last_display_update = time.time() - self.settings.refresh_interval_seconds
         self.location_start_time = 0
+        
+        from flight.history import TrackHistory
+        self.history = TrackHistory(
+            trail_length=getattr(self.settings, "trail_length", 8),
+            ghost_holdover_seconds=getattr(self.settings, "ghost_holdover_seconds", 15),
+            trail_enabled=getattr(self.settings, "trail_enabled", True),
+            ghost_enabled=getattr(self.settings, "ghost_enabled", True)
+        )
 
         # Display setup
         self._setup_display()
@@ -230,6 +238,15 @@ class FlightTracker:
         self.button_pressed = False
         self.current_location_index = (self.current_location_index + 1) % len(self.locations)
         self.location_start_time = time.time()
+        
+        from flight.history import TrackHistory
+        self.history = TrackHistory(
+            trail_length=getattr(self.settings, "trail_length", 8),
+            ghost_holdover_seconds=getattr(self.settings, "ghost_holdover_seconds", 15),
+            trail_enabled=getattr(self.settings, "trail_enabled", True),
+            ghost_enabled=getattr(self.settings, "ghost_enabled", True)
+        )
+        
         logger.info(
             f"Cycled to location {self.current_location_index + 1}/{len(self.locations)}: "
             f"{self.locations[self.current_location_index].name}"
@@ -257,7 +274,9 @@ class FlightTracker:
             use_cache=True,
         )
         self.last_display_update = time.time()  # fix: prevent immediate re-fetch
-        self.current_screen.set_aircraft(flights)
+        
+        enriched_flights = self.history.update(flights)
+        self.current_screen.set_aircraft(enriched_flights)
 
     def run(self) -> None:
         """Main application loop."""

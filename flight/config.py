@@ -40,6 +40,10 @@ class FlightTrackerSettings:
     source: str = "api"
     web_server_enabled: bool = True
     web_server_port: int = 5000
+    trail_length: int = 8
+    trail_enabled: bool = True
+    ghost_holdover_seconds: int = 15
+    ghost_enabled: bool = True
 
 
 @dataclass
@@ -114,6 +118,10 @@ def load_config(config_path: Optional[str] = None) -> FlightTrackerConfig:
         source=str(settings_data.get("source", "api")),
         web_server_enabled=bool(settings_data.get("web_server_enabled", True)),
         web_server_port=int(settings_data.get("web_server_port", 5000)),
+        trail_length=int(settings_data.get("trail_length", 8)),
+        trail_enabled=bool(settings_data.get("trail_enabled", True)),
+        ghost_holdover_seconds=int(settings_data.get("ghost_holdover_seconds", 15)),
+        ghost_enabled=bool(settings_data.get("ghost_enabled", True)),
     )
     
     logger.info(f"Loaded configuration: {len(locations)} locations")
