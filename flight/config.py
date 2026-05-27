@@ -38,7 +38,7 @@ class FlightTrackerSettings:
     rotation: int = 0
     random_location_enabled: bool = False
     source: str = "api"
-    web_server_enabled: bool = False
+    web_server_enabled: bool = True
     web_server_port: int = 5000
 
 
