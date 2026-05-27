@@ -257,9 +257,9 @@ def _html_index() -> str:
         "  </div>\n"
         "\n"
         "  <nav>\n"
-        '    <a href="/map">&#x1F5FA;&#xFE0F;&nbsp; Interactive Map</a>\n'
-        '    <a href="/aircraft.json">&#x1F4E1;&nbsp; Raw JSON</a>\n'
-        '    <a href="/status">&#x2139;&#xFE0F;&nbsp; Status</a>\n'
+        '    <a href="/map">/map &#x1F5FA;&#xFE0F;&nbsp; Interactive Map</a>\n'
+        '    <a href="/aircraft.json">/aircraft.json &#x1F4E1;&nbsp; Raw JSON</a>\n'
+        '    <a href="/status">/status &#x2139;&#xFE0F;&nbsp; Status</a>\n'
         "  </nav>\n"
         "\n"
         "  <script>\n"
@@ -443,7 +443,7 @@ def _html_map() -> str:
         "  </div>\n"
         "\n"
         '  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"\n'
-        '          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLs=" crossorigin=""></script>\n'
+        '          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>\n'
         "  <script>\n"
         "    // ── Map setup ──────────────────────────────────────────────────\n"
         "    const map = L.map('map');\n"
