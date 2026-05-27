@@ -302,8 +302,7 @@ def _html_map() -> str:
         '  <meta charset="UTF-8">\n'
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
         "  <title>pisugar-fx &middot; Live Map</title>\n"
-        '  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"\n'
-        '        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">\n'
+        '  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">\n'
         "  <style>\n"
         "    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n"
         "    html, body { height: 100%; background: #080808; font-family: 'Courier New', monospace; overflow: hidden; }\n"
@@ -442,8 +441,7 @@ def _html_map() -> str:
         "    </div>\n"
         "  </div>\n"
         "\n"
-        '  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"\n'
-        '          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>\n'
+        '  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>\n'
         "  <script>\n"
         "    // ── Map setup ──────────────────────────────────────────────────\n"
         "    const map = L.map('map');\n"
