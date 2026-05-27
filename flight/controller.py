@@ -77,12 +77,14 @@ class FlightTracker:
         # Initialize web server
         self._shared_state = SharedState()
         
-        if self.settings.web_server_enabled:
+        if getattr(self.settings, "web_server_enabled", True):
             self._web_server = FlightWebServer(
                 self._shared_state,
-                port=self.settings.web_server_port,
+                port=getattr(self.settings, "web_server_port", 5000),
             )
             self._web_server.start()
+        else:
+            self._web_server = None
 
         # Button event handling
         self.button_pressed = False
@@ -298,14 +300,13 @@ class FlightTracker:
                     if current_time - last_displayed_time >= 0.5:
                         if self.current_screen:
                             image = self.current_screen.render()
-                            self._display_image(image)
-                            self._update_led(len(self.current_screen.aircraft))
-                            
                             self._shared_state.update(
                                 image,
                                 self.current_screen.aircraft,
                                 self.current_screen.location_name,
                             )
+                            self._display_image(image)
+                            self._update_led(len(self.current_screen.aircraft))
                             
                             last_displayed_time = current_time
                         else:
