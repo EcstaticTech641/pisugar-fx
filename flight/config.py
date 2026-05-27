@@ -38,6 +38,8 @@ class FlightTrackerSettings:
     rotation: int = 0
     random_location_enabled: bool = False
     source: str = "api"
+    web_server_enabled: bool = False
+    web_server_port: int = 5000
 
 
 @dataclass
@@ -110,6 +112,8 @@ def load_config(config_path: Optional[str] = None) -> FlightTrackerConfig:
         rotation=int(settings_data.get("rotation", 0)),
         random_location_enabled=bool(settings_data.get("random_location_enabled", False)),
         source=str(settings_data.get("source", "api")),
+        web_server_enabled=bool(settings_data.get("web_server_enabled", False)),
+        web_server_port=int(settings_data.get("web_server_port", 5000)),
     )
     
     logger.info(f"Loaded configuration: {len(locations)} locations")

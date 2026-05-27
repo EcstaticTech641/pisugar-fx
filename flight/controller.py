@@ -9,6 +9,7 @@ from typing import Optional
 
 from flight.config import load_config, FlightTrackerConfig
 from flight.display import FlightRadarScreen
+from flight.web_server import FlightWebServer, SharedState
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,16 @@ class FlightTracker:
 
         # Display setup
         self._setup_display()
+
+        # Initialize web server
+        self._shared_state = SharedState()
+        
+        if self.settings.web_server_enabled:
+            self._web_server = FlightWebServer(
+                self._shared_state,
+                port=self.settings.web_server_port,
+            )
+            self._web_server.start()
 
         # Button event handling
         self.button_pressed = False
@@ -289,6 +300,13 @@ class FlightTracker:
                             image = self.current_screen.render()
                             self._display_image(image)
                             self._update_led(len(self.current_screen.aircraft))
+                            
+                            self._shared_state.update(
+                                image,
+                                self.current_screen.aircraft,
+                                self.current_screen.location_name,
+                            )
+                            
                             last_displayed_time = current_time
                         else:
                             logger.warning("No current screen to display")
