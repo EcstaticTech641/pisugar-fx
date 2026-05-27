@@ -188,4 +188,12 @@ MIT - Feel free to modify and redistribute
 
 ---
 
+https://github.com/PiSugar/PiSugar/wiki/PiSugarS-Series
+https://github.com/PiSugar/Whisplay
+https://github.com/topics/raspberry-pi-zero-2-w
+https://github.com/flightaware/dump1090
+https://github.com/flightaware/piaware
+
+---
+
 **Questions?** Check the specs/ directory for detailed design documentation.
