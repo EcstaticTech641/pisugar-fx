@@ -178,7 +178,7 @@ Response includes:
 
 ## License
 
-MIT - Feel free to modify and redistribute
+Apache 2.0
 
 ## References
 
