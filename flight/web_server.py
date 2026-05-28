@@ -241,7 +241,7 @@ def _html_index() -> str:
         "</head>\n"
         "<body>\n"
         '  <header style="text-align:center">\n'
-        "    <h1>&#x2708;&#xFE0F;&nbsp; pisugar-fx</h1>\n"
+        "    <h1>pisugar-fx</h1>\n"
         "    <div class=\"subtitle\">Radar Mirror &nbsp;&middot;&nbsp; Live Display Feed</div>\n"
         "  </header>\n"
         "\n"
@@ -409,7 +409,7 @@ def _html_map() -> str:
         '  <div id="app">\n'
         '    <div id="map-wrap">\n'
         '      <div id="map"></div>\n'
-        '      <div id="info-bar">pisugar-fx &nbsp;&middot;&nbsp; <span id="count">loading&hellip;</span></div>\n'
+        '      <div id="info-bar">&#x2708; pisugar-fx &nbsp;&middot;&nbsp; <span id="count">loading&hellip;</span></div>\n'
         '      <a id="back-btn" href="/">&larr; Radar Mirror</a>\n'
         "    </div>\n"
         '    <div id="detail">\n'
