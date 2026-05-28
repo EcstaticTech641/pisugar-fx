@@ -2,7 +2,7 @@
 
 Real-time aircraft tracking display for Raspberry Pi Zero 2W with WhisPlay 1.69" HAT.
 
-> Disclaimer: Although the project name is inspired by PiSugar, this project is not affiliated with or sponsored by https://github.com/PiSugar in any way.
+> Disclaimer: Although the project name is inspired by PiSugar, this project is not affiliated with or sponsored by [@PiSugar](https://github.com/PiSugar) in any way.
 
 ## Quick Start
 
