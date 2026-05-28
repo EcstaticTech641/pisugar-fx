@@ -18,12 +18,17 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import socket
 import threading
 import time
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
+
+# Directory that holds the static favicon/manifest pack
+_ASSETS_DIR = os.path.join(os.path.dirname(__file__), "web-assets")
+
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +181,37 @@ class FlightWebServer:
                 "led_color":      f"rgb({r},{g},{b})",
             })
 
+        # ── Static assets (favicon pack) ────────────────────────────────
+        _MIME = {
+            ".ico":         "image/x-icon",
+            ".png":         "image/png",
+            ".webmanifest": "application/manifest+json",
+        }
+
+        @app.route("/favicon.ico")
+        @app.route("/favicon-16x16.png")
+        @app.route("/favicon-32x32.png")
+        @app.route("/apple-touch-icon.png")
+        @app.route("/android-chrome-192x192.png")
+        @app.route("/android-chrome-512x512.png")
+        @app.route("/site.webmanifest")
+        def static_asset():
+            from flask import request as freq
+            filename = freq.path.lstrip("/")
+            filepath = os.path.join(_ASSETS_DIR, filename)
+            ext = os.path.splitext(filename)[1].lower()
+            mime = _MIME.get(ext, "application/octet-stream")
+            try:
+                with open(filepath, "rb") as fh:
+                    data = fh.read()
+                return Response(
+                    data,
+                    mimetype=mime,
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
+            except FileNotFoundError:
+                return Response(b"not found", status=404)
+
         app.run(host="0.0.0.0", port=self._port, threaded=True, use_reloader=False)
 
 
@@ -217,7 +253,10 @@ def _html_index() -> str:
         '  <meta charset="UTF-8">\n'
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
         "  <title>pisugar-fx &middot; Radar Mirror</title>\n"
-        "  <link rel=\"icon\" href=\"data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✈</text></svg>\">\n"
+        "  <link rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"/apple-touch-icon.png\">\n"
+        "  <link rel=\"icon\" type=\"image/png\" sizes=\"32x32\" href=\"/favicon-32x32.png\">\n"
+        "  <link rel=\"icon\" type=\"image/png\" sizes=\"16x16\" href=\"/favicon-16x16.png\">\n"
+        "  <link rel=\"manifest\" href=\"/site.webmanifest\">\n"
         "  <style>\n"
         "    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n"
         "    body {\n"
@@ -325,12 +364,14 @@ def _html_map() -> str:
         '  <meta charset="UTF-8">\n'
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
         "  <title>&#x2708; pisugar-fx &middot; Live Map</title>\n"
-        "  <link rel=\"icon\" href=\"data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✈</text></svg>\">\n"
+        "  <link rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"/apple-touch-icon.png\">\n"
+        "  <link rel=\"icon\" type=\"image/png\" sizes=\"32x32\" href=\"/favicon-32x32.png\">\n"
+        "  <link rel=\"icon\" type=\"image/png\" sizes=\"16x16\" href=\"/favicon-16x16.png\">\n"
+        "  <link rel=\"manifest\" href=\"/site.webmanifest\">\n"
         '  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">\n'
         "  <style>\n"
         "    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n"
         "    html, body { height: 100%; background: #080808; font-family: 'Courier New', monospace; overflow: hidden; }\n"
-        "\n"
         "    /* ── Layout ── */\n"
         "    #app { display: flex; height: 100vh; width: 100vw; }\n"
         "    #map-wrap { flex: 1; position: relative; transition: flex .3s ease; }\n"
