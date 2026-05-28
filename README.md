@@ -51,7 +51,7 @@ Edit `config/flight_locations.json` to set the locations you want to track:
 Before running on hardware, test your setup:
 
 ```bash
-python3 flight_test.py
+python3 tests/flight_test.py
 ```
 
 This will:
@@ -122,7 +122,7 @@ Flight data comes from **airplanes.live** (free, no API key required):
 ### Display is blank
 - Verify WhisPlay driver is installed: `ls ~/Whisplay/Driver/`
 - Check brightness setting in config (0 would appear blank)
-- Run `flight_test.py` to diagnose hardware issues
+- Run `python3 tests/flight_debug.py` to diagnose hardware issues
 
 ### No aircraft showing
 - Check radius is reasonable (10-500 miles)
@@ -139,7 +139,11 @@ flight/
 ├── controller.py       # Main app loop
 └── __init__.py
 flight_tracker.py       # Entry point script
-flight_test.py          # Testing & validation
+tests/
+├── flight_test.py      # Testing & validation
+├── flight_debug.py     # Hardware diagnostics
+├── flight_integration_test.py  # App logic integration checks
+└── range_assessment.py # Antenna range assessment
 config/
 └── flight_locations.json    # Location configuration
 ```

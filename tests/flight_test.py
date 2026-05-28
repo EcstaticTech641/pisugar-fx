@@ -9,8 +9,9 @@ import sys
 import os
 import logging
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add project root to path so local package imports continue to work.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
 
 from flight.api import FlightAPI
 from flight.config import load_config, FlightLocation
