@@ -257,9 +257,9 @@ def _html_index() -> str:
         "  </div>\n"
         "\n"
         "  <nav>\n"
-        '    <a href="/map">/map &#x1F5FA;&#xFE0F;&nbsp; Interactive Map</a>\n'
-        '    <a href="/aircraft.json">/aircraft.json &#x1F4E1;&nbsp; Raw JSON</a>\n'
-        '    <a href="/status">/status &#x2139;&#xFE0F;&nbsp; Status</a>\n'
+        '    <a href="/map"> &#x1F5FA;&#xFE0F;&nbsp; Interactive Map</a>\n'
+        '    <a href="/aircraft.json"> &#x1F4E1;&nbsp; Raw JSON</a>\n'
+        '    <a href="/status"> &#x2139;&#xFE0F;&nbsp; Status</a>\n'
         "  </nav>\n"
         "\n"
         "  <script>\n"
@@ -409,7 +409,7 @@ def _html_map() -> str:
         '  <div id="app">\n'
         '    <div id="map-wrap">\n'
         '      <div id="map"></div>\n'
-        '      <div id="info-bar">&#x2708; pisugar-fx &nbsp;&middot;&nbsp; <span id="count">loading&hellip;</span></div>\n'
+        '      <div id="info-bar">pisugar-fx &nbsp;&middot;&nbsp; <span id="count">loading&hellip;</span></div>\n'
         '      <a id="back-btn" href="/">&larr; Radar Mirror</a>\n'
         "    </div>\n"
         '    <div id="detail">\n'
