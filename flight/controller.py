@@ -13,22 +13,7 @@ from flight.web_server import FlightWebServer, SharedState
 
 logger = logging.getLogger(__name__)
 
-def _get_location_from_ip():
-    """Auto-detect location from IP address for portable antenna mode."""
-    try:
-        import urllib.request
-        import json
-        with urllib.request.urlopen("https://ipapi.co/json/", timeout=5) as r:
-            data = json.load(r)
-            lat = data["latitude"]
-            lon = data["longitude"]
-            city = data.get("city", "Unknown")
-            logger.info(f"Auto-detected location: {city} ({lat:.4f}, {lon:.4f})")
-            return lat, lon, city
-    except Exception as e:
-        logger.warning(f"IP geolocation failed: {e} — location unknown")
-        return None, None, "Unknown Location"
-    
+
 class FlightTracker:
     """Main flight tracker application controller."""
 
@@ -50,8 +35,11 @@ class FlightTracker:
         else:
             self.api = FlightAPI(cache_ttl_seconds=self.settings.refresh_interval_seconds)
             logger.info("Using API source (airplanes.live)")
+        self.source_type = source_type
         if source_type == "local":
-            lat, lon, city = _get_location_from_ip()
+            from flight.location import LocationProvider
+            self.location_provider = LocationProvider()
+            lat, lon, city = self.location_provider.detect()
             from flight.config import FlightLocation
             self.locations = [
                 FlightLocation(
@@ -62,7 +50,7 @@ class FlightTracker:
                 )
             ]
             if lat is None:
-                logger.warning("Antenna mode: location unknown — distance filter and radar centre disabled")
+                logger.warning("Antenna mode: location unknown — will retry via aircraft centroid on first fetch")
             else:
                 logger.info(f"Antenna mode: single location '{city}' set automatically")
 
@@ -273,12 +261,41 @@ class FlightTracker:
                 radius_miles=location.radius_miles,
             )
 
-        # Can't query the API without coordinates
+        # No coordinates yet — try aircraft centroid fallback (local/antenna mode only)
         if location.latitude is None or location.longitude is None:
-            logger.debug("Skipping flight fetch — location coords unknown")
-            self.current_screen.set_aircraft([])
-            self.last_display_update = time.time()
-            return
+            if getattr(self, "source_type", None) == "local" and hasattr(self, "location_provider"):
+                # Fetch all aircraft visible to the antenna (no radius filter)
+                raw_flights = self.api.fetch_flights(
+                    latitude=0, longitude=0, radius_miles=0, use_cache=False
+                )
+                lat, lon, city = self.location_provider.detect(aircraft_list=raw_flights)
+                if lat is not None:
+                    from flight.config import FlightLocation
+                    self.locations[self.current_location_index] = FlightLocation(
+                        name=city,
+                        latitude=lat,
+                        longitude=lon,
+                        radius_miles=100,
+                    )
+                    # Recreate screen now that we have a position
+                    location = self.locations[self.current_location_index]
+                    self.current_screen = FlightRadarScreen(
+                        location_name=location.name,
+                        latitude=location.latitude,
+                        longitude=location.longitude,
+                        radius_miles=location.radius_miles,
+                    )
+                    logger.info(f"Location resolved via aircraft centroid: {city}")
+                else:
+                    logger.debug("Centroid fallback not yet available — not enough aircraft")
+                    self.current_screen.set_aircraft([])
+                    self.last_display_update = time.time()
+                    return
+            else:
+                logger.debug("Skipping flight fetch — location coords unknown")
+                self.current_screen.set_aircraft([])
+                self.last_display_update = time.time()
+                return
 
         flights = self.api.fetch_flights(
             latitude=location.latitude,
