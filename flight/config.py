@@ -42,7 +42,7 @@ class FlightTrackerSettings:
     web_server_port: int = 5000
     trail_length: int = 8
     trail_enabled: bool = True
-    ghost_holdover_seconds: int = 15
+    ghost_holdover_seconds: int = 60
     ghost_enabled: bool = True
 
 
@@ -120,7 +120,7 @@ def load_config(config_path: Optional[str] = None) -> FlightTrackerConfig:
         web_server_port=int(settings_data.get("web_server_port", 5000)),
         trail_length=int(settings_data.get("trail_length", 8)),
         trail_enabled=bool(settings_data.get("trail_enabled", True)),
-        ghost_holdover_seconds=int(settings_data.get("ghost_holdover_seconds", 15)),
+        ghost_holdover_seconds=int(settings_data.get("ghost_holdover_seconds", 60)),
         ghost_enabled=bool(settings_data.get("ghost_enabled", True)),
     )
     

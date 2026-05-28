@@ -209,7 +209,7 @@ class FlightRadarScreen:
         """Draw header with location, time, and aircraft count."""
         # Location name (left-aligned)
         draw.text(
-            (4, 4),
+            (8, 8),
             self.location_name,
             fill=self.C_HEADER_TEXT,
             font=self._fonts["small"],
@@ -220,7 +220,7 @@ class FlightRadarScreen:
         time_bbox = draw.textbbox((0, 0), time_str, font=self._fonts["small"])
         time_width = time_bbox[2] - time_bbox[0]
         draw.text(
-            (self.WIDTH - 4 - time_width, 4),
+            (self.WIDTH - 8 - time_width, 8),
             time_str,
             fill=self.C_HEADER_DIM,
             font=self._fonts["small"],
@@ -231,7 +231,7 @@ class FlightRadarScreen:
         count_bbox = draw.textbbox((0, 0), count_str, font=self._fonts["small"])
         count_width = count_bbox[2] - count_bbox[0]
         draw.text(
-            ((self.WIDTH - count_width) // 2, 4 + 10),
+            ((self.WIDTH - count_width) // 2, 20),
             count_str,
             fill=self.C_HEADER_DIM,
             font=self._fonts["small"],

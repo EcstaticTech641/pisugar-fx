@@ -58,7 +58,7 @@ class FlightTracker:
                     name=city,
                     latitude=lat,
                     longitude=lon,
-                    radius_miles=150,
+                    radius_miles=100,
                 )
             ]
             logger.info(f"Antenna mode: single location '{city}' set automatically")
@@ -202,13 +202,11 @@ class FlightTracker:
         except Exception as e:
             logger.error(f"Failed to display image: {e}", exc_info=True)
 
-    def _update_led(self, aircraft_count: int) -> None:
+    def _update_led(self, aircraft_count: int) -> tuple[int, int, int]:
         """Map aircraft count to RGB LED color as a density indicator."""
-        if not self.has_display or not self.display_board:
-            return
-    try:
+        # Calculate color
         if aircraft_count == 0:
-            r, g, b = 0, 0, 255        #  blue — nothing around
+            r, g, b = 0, 0, 255       # blue — nothing around
         elif aircraft_count <= 5:
             r, g, b = 0, 255, 0       # green
         elif aircraft_count <= 15:
@@ -217,9 +215,14 @@ class FlightTracker:
             r, g, b = 255, 80, 0      # orange
         else:
             r, g, b = 255, 0, 0       # red — busy sky
-        self.display_board.set_rgb(r, g, b)
-    except Exception as e:
-        logger.warning(f"LED update failed: {e}")
+            
+        if self.has_display and self.display_board:
+            try:
+                self.display_board.set_rgb(r, g, b)
+            except Exception as e:
+                logger.warning(f"LED update failed: {e}")
+                
+        return (r, g, b)
 
     def _should_cycle_location(self) -> bool:
         """Check if it's time to cycle to next location."""
@@ -242,7 +245,7 @@ class FlightTracker:
         from flight.history import TrackHistory
         self.history = TrackHistory(
             trail_length=getattr(self.settings, "trail_length", 8),
-            ghost_holdover_seconds=getattr(self.settings, "ghost_holdover_seconds", 15),
+            ghost_holdover_seconds=getattr(self.settings, "ghost_holdover_seconds", 60),
             trail_enabled=getattr(self.settings, "trail_enabled", True),
             ghost_enabled=getattr(self.settings, "ghost_enabled", True)
         )
@@ -319,13 +322,15 @@ class FlightTracker:
                     if current_time - last_displayed_time >= 0.5:
                         if self.current_screen:
                             image = self.current_screen.render()
+                            led_color = self._update_led(len(self.current_screen.aircraft))
+                            
                             self._shared_state.update(
                                 image,
                                 self.current_screen.aircraft,
                                 self.current_screen.location_name,
+                                led_color=led_color
                             )
                             self._display_image(image)
-                            self._update_led(len(self.current_screen.aircraft))
                             
                             last_displayed_time = current_time
                         else:

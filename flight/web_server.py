@@ -44,10 +44,17 @@ class SharedState:
         self._jpeg_bytes: Optional[bytes] = None
         self._aircraft: List[dict] = []
         self._location_name: str = "pisugar-fx"
+        self._led_color: tuple = (0, 0, 255)  # default blue
         self.last_updated: float = 0.0
         self.start_time: float = time.time()
 
-    def update(self, image, aircraft: List[dict], location_name: str) -> None:
+    def update(
+        self,
+        image,
+        aircraft: List[dict],
+        location_name: str,
+        led_color: tuple = (0, 0, 255),
+    ) -> None:
         """
         Called from the controller after every render().
 
@@ -55,6 +62,7 @@ class SharedState:
             image:         PIL.Image.Image  — the rendered radar frame
             aircraft:      distance-filtered aircraft list
             location_name: FlightRadarScreen.location_name
+            led_color:     (r, g, b) tuple matching the density LED colour
         """
         jpeg: Optional[bytes] = None
         try:
@@ -69,6 +77,7 @@ class SharedState:
                 self._jpeg_bytes = jpeg
             self._aircraft = list(aircraft)
             self._location_name = location_name
+            self._led_color = led_color
             self.last_updated = time.time()
 
     def get_jpeg(self) -> Optional[bytes]:
@@ -78,6 +87,10 @@ class SharedState:
     def get_aircraft(self) -> List[dict]:
         with self._lock:
             return list(self._aircraft)
+
+    def get_led_color(self) -> tuple:
+        with self._lock:
+            return self._led_color
 
     @property
     def location_name(self) -> str:
@@ -154,11 +167,13 @@ class FlightWebServer:
 
         @app.route("/status")
         def status():
+            r, g, b = state.get_led_color()
             return jsonify({
                 "location":       state.location_name,
                 "aircraft_count": len(state.get_aircraft()),
                 "last_updated":   state.last_updated,
                 "uptime_seconds": round(time.time() - state.start_time, 1),
+                "led_color":      f"rgb({r},{g},{b})",
             })
 
         app.run(host="0.0.0.0", port=self._port, threaded=True, use_reloader=False)
@@ -202,6 +217,7 @@ def _html_index() -> str:
         '  <meta charset="UTF-8">\n'
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
         "  <title>pisugar-fx &middot; Radar Mirror</title>\n"
+        "  <link rel=\"icon\" href=\"data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✈</text></svg>\">\n"
         "  <style>\n"
         "    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n"
         "    body {\n"
@@ -216,6 +232,7 @@ def _html_index() -> str:
         "      border: 2px solid #1c4a3a; border-radius: 10px;\n"
         "      padding: 10px; background: #000;\n"
         "      box-shadow: 0 0 32px rgba(0,255,180,.12);\n"
+        "      transition: border-color .8s ease, box-shadow .8s ease;\n"
         "    }\n"
         "    #radar { display: block; width: 240px; height: 280px; image-rendering: pixelated; }\n"
         "    .meta { font-size: .68rem; color: #555; text-align: center; line-height: 2; }\n"
@@ -245,7 +262,7 @@ def _html_index() -> str:
         "    <div class=\"subtitle\">Radar Mirror &nbsp;&middot;&nbsp; Live Display Feed</div>\n"
         "  </header>\n"
         "\n"
-        '  <div class="frame">\n'
+        '  <div class="frame" id="frame">\n'
         '    <img id="radar" src="/snapshot.jpg" alt="Radar display" width="240" height="280" style="display:block;image-rendering:pixelated;">\n'
         "  </div>\n"
         "\n"
@@ -257,16 +274,17 @@ def _html_index() -> str:
         "  </div>\n"
         "\n"
         "  <nav>\n"
-        '    <a href="/map"> &#x1F5FA;&#xFE0F;&nbsp; Interactive Map</a>\n'
+        '    <a href="/map"> &#x2708;&nbsp; Interactive Map</a>\n'
         '    <a href="/aircraft.json"> &#x1F4E1;&nbsp; Raw JSON</a>\n'
         '    <a href="/status"> &#x2139;&#xFE0F;&nbsp; Status</a>\n'
         "  </nav>\n"
         "\n"
         "  <script>\n"
-        "    const radar = document.getElementById('radar');\n"
-        "    const acEl  = document.getElementById('ac-count');\n"
-        "    const locEl = document.getElementById('location');\n"
-        "    const tsEl  = document.getElementById('ts');\n"
+        "    const radar  = document.getElementById('radar');\n"
+        "    const frame  = document.getElementById('frame');\n"
+        "    const acEl   = document.getElementById('ac-count');\n"
+        "    const locEl  = document.getElementById('location');\n"
+        "    const tsEl   = document.getElementById('ts');\n"
         "\n"
         "    function refreshImage() {\n"
         "      radar.src = '/snapshot.jpg?t=' + Date.now();\n"
@@ -278,6 +296,11 @@ def _html_index() -> str:
         "        acEl.textContent  = d.aircraft_count;\n"
         "        locEl.textContent = d.location || '\u2014';\n"
         "        tsEl.textContent  = new Date().toLocaleTimeString();\n"
+        "        if (d.led_color) {\n"
+        "          const c = d.led_color;  // e.g. 'rgb(0,255,0)'\n"
+        "          frame.style.borderColor = c;\n"
+        "          frame.style.boxShadow   = '0 0 36px ' + c.replace('rgb(', 'rgba(').replace(')', ',.28)');\n"
+        "        }\n"
         "      } catch (_) {}\n"
         "    }\n"
         "\n"
@@ -301,7 +324,8 @@ def _html_map() -> str:
         "<head>\n"
         '  <meta charset="UTF-8">\n'
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
-        "  <title>pisugar-fx &middot; Live Map</title>\n"
+        "  <title>&#x2708; pisugar-fx &middot; Live Map</title>\n"
+        "  <link rel=\"icon\" href=\"data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✈</text></svg>\">\n"
         '  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">\n'
         "  <style>\n"
         "    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n"
@@ -409,7 +433,7 @@ def _html_map() -> str:
         '  <div id="app">\n'
         '    <div id="map-wrap">\n'
         '      <div id="map"></div>\n'
-        '      <div id="info-bar">&#x2708; pisugar-fx &nbsp;&middot;&nbsp; <span id="count">loading&hellip;</span></div>\n'
+        '      <div id="info-bar"><span style="color:#00e676">&#x2708;</span> pisugar-fx &nbsp;&middot;&nbsp; <span id="count">loading&hellip;</span></div>\n'
         '      <a id="back-btn" href="/">&larr; Radar Mirror</a>\n'
         "    </div>\n"
         '    <div id="detail">\n'
