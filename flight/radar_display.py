@@ -127,6 +127,20 @@ def filter_band(flights, center_lat, center_lon, inner=50, outer=100):
 
 # ── Draw one full frame ───────────────────────────────────────────────────────
 def draw_frame(flights, center_lat, center_lon):
+    # Skip drawing if location is unknown
+    if center_lat is None or center_lon is None:
+        img = Image.new("RGB", (W, H), C_BG)
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([(0, 0), (W, HEADER_H)], fill=C_HEADER)
+        draw.line([(0, HEADER_H), (W, HEADER_H)], fill=C_DIVIDER, width=1)
+        draw.text((6, 4), "RADAR", font=FONT_LG, fill=C_HDR_TEXT)
+        draw.text((6, 20), "Unknown", font=FONT_SM, fill=C_HDR_DIM)
+        draw.text((W - 72, 4), "— AC", font=FONT_LG, fill=C_HDR_TEXT)
+        now_str = datetime.now().strftime("%H:%M:%S")
+        draw.text((W - 72, 20), now_str, font=FONT_SM, fill=C_HDR_DIM)
+        draw.line([(W // 2, 6), (W // 2, HEADER_H - 6)], fill=C_DIVIDER, width=1)
+        return img
+
     img  = Image.new("RGB", (W, H), C_BG)
     draw = ImageDraw.Draw(img)
 
@@ -200,11 +214,11 @@ def draw_frame(flights, center_lat, center_lon):
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 def main():
-    # Edit these to match your actual location if needed.
-    # The web app uses browser geolocation, but this script
-    # needs a fixed centre point for the Pillow radar draw.
-    CENTER_LAT = 36.1156   # Stillwater, OK default
-    CENTER_LON = -97.0584
+    # Location will be set via LocationProvider in future phases.
+    # For now, this script requires manual configuration or should be updated
+    # by the controller to receive location from IP geolocation or GPS.
+    CENTER_LAT = None   # Will be provided by LocationProvider
+    CENTER_LON = None
 
     print("[radar_display] Starting up...")
     print(f"[radar_display] Centre: {CENTER_LAT}, {CENTER_LON}")

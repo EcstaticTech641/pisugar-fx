@@ -26,8 +26,8 @@ def _get_location_from_ip():
             logger.info(f"Auto-detected location: {city} ({lat:.4f}, {lon:.4f})")
             return lat, lon, city
     except Exception as e:
-        logger.warning(f"IP geolocation failed: {e} — using fallback coordinates")
-        return 36.1156, -97.0584, "Stillwater"
+        logger.warning(f"IP geolocation failed: {e} — location unknown")
+        return None, None, "Unknown Location"
     
 class FlightTracker:
     """Main flight tracker application controller."""
@@ -61,7 +61,10 @@ class FlightTracker:
                     radius_miles=100,
                 )
             ]
-            logger.info(f"Antenna mode: single location '{city}' set automatically")
+            if lat is None:
+                logger.warning("Antenna mode: location unknown — distance filter and radar centre disabled")
+            else:
+                logger.info(f"Antenna mode: single location '{city}' set automatically")
 
 
         # State management
@@ -269,6 +272,13 @@ class FlightTracker:
                 longitude=location.longitude,
                 radius_miles=location.radius_miles,
             )
+
+        # Can't query the API without coordinates
+        if location.latitude is None or location.longitude is None:
+            logger.debug("Skipping flight fetch — location coords unknown")
+            self.current_screen.set_aircraft([])
+            self.last_display_update = time.time()
+            return
 
         flights = self.api.fetch_flights(
             latitude=location.latitude,

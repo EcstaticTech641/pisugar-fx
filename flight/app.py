@@ -45,7 +45,8 @@ def api_flights():
         lat = float(request.args.get("lat"))
         lon = float(request.args.get("lon"))
     except (TypeError, ValueError):
-        lat, lon = 36.1156, -97.0584  # fallback: Stillwater, OK
+        # No location provided — return empty results instead of defaulting to hardcoded coords
+        return jsonify({"lat": None, "lon": None, "flights": []}), 400
     flights = fetch_flights(lat, lon, 200)
     return jsonify({"lat": lat, "lon": lon, "flights": flights})
 
@@ -188,7 +189,7 @@ HTML = r"""<!DOCTYPE html>
   <div class="ld-note">Allow location access when prompted for best results</div>
 </div>
 
-<div id="geo-banner">⚠ Location access denied — centered on Stillwater, OK (fallback)</div>
+<div id="geo-banner">⚠ Location access denied — centered on Unknown Location (no position available)</div>
 
 <div id="app">
   <div id="header">
@@ -214,7 +215,7 @@ HTML = r"""<!DOCTYPE html>
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
-let centerLat = 36.1156, centerLon = -97.0584;   // Stillwater fallback
+let centerLat = null, centerLon = null;   // Will be set by geolocation or remain null
 let selected   = null;
 let allFlights = [];
 let markers    = {};
@@ -224,7 +225,7 @@ const map = L.map('map', { zoomControl: true, attributionControl: false });
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
   subdomains: 'abcd', maxZoom: 14
 }).addTo(map);
-map.setView([centerLat, centerLon], 7);
+// Map will be centered when location is acquired or updated
 
 const ringLayer  = L.layerGroup().addTo(map);
 const planeLayer = L.layerGroup().addTo(map);
@@ -320,6 +321,16 @@ function selectFlight(icao) {
 
 // ── Fetch + render ────────────────────────────────────────────────────────────
 async function loadFlights(lat, lon) {
+  // Skip fetch if location is not available
+  if (lat === null || lon === null) {
+    document.getElementById('loc-label').textContent = 'Unknown Location';
+    document.getElementById('count-badge').textContent = '— AC';
+    planeLayer.clearLayers();
+    ringLayer.clearLayers();
+    renderList([]);
+    return;
+  }
+
   document.getElementById('status-dot').style.background = 'var(--warn)';
   try {
     const res = await fetch(`/api/flights?lat=${lat}&lon=${lon}`);
@@ -376,13 +387,13 @@ function hideLoader() {
         await loadFlights(centerLat, centerLon);
         hideLoader();
       },
-      // ❌ Denied or timed out — fall back to Stillwater
+      // ❌ Denied or timed out — show warning, no hardcoded fallback
       async (err) => {
         console.warn('[geolocation denied]', err.message);
         const banner = document.getElementById('geo-banner');
         banner.style.display = 'block';
         setTimeout(() => banner.style.display = 'none', 6000);
-        await loadFlights(centerLat, centerLon);
+        await loadFlights(centerLat, centerLon);  // centerLat/centerLon remain null
         hideLoader();
       },
       { timeout: 8000, maximumAge: 60000 }
@@ -393,8 +404,12 @@ function hideLoader() {
     hideLoader();
   }
 
-  // Auto-refresh every 30 seconds
-  setInterval(() => loadFlights(centerLat, centerLon), 30000);
+  // Auto-refresh every 30 seconds (only if location is known)
+  setInterval(() => {
+    if (centerLat !== null && centerLon !== null) {
+      loadFlights(centerLat, centerLon);
+    }
+  }, 30000);
 })();
 </script>
 </body>

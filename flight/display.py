@@ -3,7 +3,7 @@
 import logging
 import math
 from datetime import datetime
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -40,8 +40,8 @@ class FlightRadarScreen:
     def __init__(
         self,
         location_name: str,
-        latitude: float,
-        longitude: float,
+        latitude: Optional[float],
+        longitude: Optional[float],
         radius_miles: int = 100,
     ):
         self.location_name = location_name
@@ -51,6 +51,11 @@ class FlightRadarScreen:
         self.aircraft: List[Dict[str, Any]] = []
         self.timestamp = datetime.now()
         self._fonts = self._load_fonts()
+    
+    @property
+    def _has_location(self) -> bool:
+        """True when we have real coordinates to plot against."""
+        return self.center_lat is not None and self.center_lon is not None
     
     def _load_fonts(self) -> Dict[str, ImageFont.FreeTypeFont]:
         """Load TrueType fonts, falling back to default if needed."""
@@ -101,8 +106,11 @@ class FlightRadarScreen:
             lon: Longitude
             
         Returns:
-            (x, y) pixel coordinates
+            (x, y) pixel coordinates, or map center when location is unknown
         """
+        if not self._has_location:
+            return self.CENTER_X, self.CENTER_Y
+        
         dlat = lat - self.center_lat
         dlon = lon - self.center_lon
         
@@ -207,11 +215,13 @@ class FlightRadarScreen:
     
     def _draw_header(self, draw: ImageDraw.ImageDraw) -> None:
         """Draw header with location, time, and aircraft count."""
-        # Location name (left-aligned)
+        # Location name (left-aligned); dim if unknown
+        display_name = self.location_name if self.location_name else "Unknown Location"
+        name_color = self.C_HEADER_DIM if not self._has_location else self.C_HEADER_TEXT
         draw.text(
             (8, 8),
-            self.location_name,
-            fill=self.C_HEADER_TEXT,
+            display_name,
+            fill=name_color,
             font=self._fonts["small"],
         )
         
@@ -239,6 +249,11 @@ class FlightRadarScreen:
     
     def _draw_radar_background(self, draw: ImageDraw.ImageDraw) -> None:
         """Draw range rings and crosshairs."""
+        # Skip range rings when location is unknown (miles-per-pixel is meaningless)
+        if not self._has_location:
+            self._draw_crosshair(draw)
+            return
+        
         # Draw range rings
         rings = self._ring_miles()
         for idx, ring_miles in enumerate(rings):
@@ -270,6 +285,10 @@ class FlightRadarScreen:
             )
         
         # Draw crosshairs (center plus sign)
+        self._draw_crosshair(draw)
+    
+    def _draw_crosshair(self, draw: ImageDraw.ImageDraw) -> None:
+        """Draw center crosshair and dot."""
         cross_size = 12
         draw.line(
             [

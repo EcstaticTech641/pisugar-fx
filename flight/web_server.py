@@ -48,7 +48,7 @@ class SharedState:
         self._lock = threading.Lock()
         self._jpeg_bytes: Optional[bytes] = None
         self._aircraft: List[dict] = []
-        self._location_name: str = "pisugar-fx"
+        self._location_name: str = "Unknown Location"
         self._led_color: tuple = (0, 0, 255)  # default blue
         self.last_updated: float = 0.0
         self.start_time: float = time.time()

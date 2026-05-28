@@ -7,7 +7,9 @@ then reports max/average range and RSSI statistics to help tune
 radius_miles and display ring labels.
 
 Usage:
-    python3 range_assessment.py [--duration 300] [--interval 5] [--lat 36.1156] [--lon -97.0584]
+    python3 range_assessment.py [--duration 300] [--interval 5] [--lat LAT] [--lon LON]
+    
+    Note: --lat and --lon are required (no hardcoded defaults)
 """
 
 import argparse
@@ -61,10 +63,10 @@ def main():
                         help="Collection window in seconds (default: 300)")
     parser.add_argument("--interval", type=int, default=5,
                         help="Sample interval in seconds (default: 5)")
-    parser.add_argument("--lat", type=float, default=36.1156,
-                        help="Home latitude (default: Stillwater OK)")
-    parser.add_argument("--lon", type=float, default=-97.0584,
-                        help="Home longitude (default: Stillwater OK)")
+    parser.add_argument("--lat", type=float, required=True,
+                        help="Home latitude (required)")
+    parser.add_argument("--lon", type=float, required=True,
+                        help="Home longitude (required)")
     parser.add_argument("--json", default="/run/readsb/aircraft.json",
                         help="Path to aircraft.json (default: /run/readsb/aircraft.json)")
     args = parser.parse_args()

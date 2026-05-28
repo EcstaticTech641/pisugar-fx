@@ -14,15 +14,15 @@ class FlightLocation:
     """Represents a configured flight tracking location."""
     
     name: str
-    latitude: float
-    longitude: float
+    latitude: Optional[float]
+    longitude: Optional[float]
     radius_miles: int = 100
     
     def __post_init__(self):
-        """Validate coordinates."""
-        if not -90 <= self.latitude <= 90:
+        """Validate coordinates when present."""
+        if self.latitude is not None and not -90 <= self.latitude <= 90:
             raise ValueError(f"Invalid latitude: {self.latitude}")
-        if not -180 <= self.longitude <= 180:
+        if self.longitude is not None and not -180 <= self.longitude <= 180:
             raise ValueError(f"Invalid longitude: {self.longitude}")
         if self.radius_miles < 10 or self.radius_miles > 500:
             raise ValueError(f"Radius must be 10-500 miles, got {self.radius_miles}")
