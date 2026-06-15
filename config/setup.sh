@@ -45,6 +45,14 @@ log_step() {
 # CONFIGURATION PAYLOAD
 ################################################################################
 
+
+if [ ! -f "setup.conf" ] && [ -f "setup.conf.example" ]; then
+    log_warn "No setup.conf found. Creating one from setup.conf.example..."
+    cp setup.conf.example setup.conf
+    log_warn "Please edit setup.conf with your settings and run the script again."
+    exit 0
+fi
+
 # Define sensible fallback defaults
 AP_PASSWORD="pisugarfx2026"
 TARGET_HOSTNAME="ronPi"
