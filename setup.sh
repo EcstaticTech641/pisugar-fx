@@ -12,17 +12,14 @@
 # Date: 2026-06
 ################################################################################
 
-set -euo pipefail
-
-# Suppress interactive apt-get dialogs
-export DEBIAN_FRONTEND=noninteractive
+set -e  # Exit on first error
 
 # Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m'  # No color
 
 # Logging functions
 log_info() {
@@ -42,45 +39,20 @@ log_step() {
 }
 
 ################################################################################
-# CONFIGURATION PAYLOAD
-################################################################################
-
-
-if [ ! -f "setup.conf" ] && [ -f "setup.conf.example" ]; then
-    log_warn "No setup.conf found. Creating one from setup.conf.example..."
-    cp setup.conf.example setup.conf
-    log_warn "Please edit setup.conf with your settings and run the script again."
-    exit 0
-fi
-
-# Define sensible fallback defaults
-AP_PASSWORD="pisugarfx2026"
-TARGET_HOSTNAME="ronPi"
-AUTO_REBOOT="false"
-
-# Look for setup.conf in the same directory as the script
-CONFIG_FILE="$(dirname "$0")/setup.conf"
-
-if [ -f "$CONFIG_FILE" ]; then
-    log_info "Found setup.conf. Sourcing configuration overrides..."
-    source "$CONFIG_FILE"
-else
-    log_info "No setup.conf found. Proceeding autonomously with default settings."
-fi
-
-################################################################################
 # PHASE 1: PRE-FLIGHT CHECKS
 ################################################################################
 
 phase_preflight() {
     log_step "Phase 1: Pre-flight Checks"
     
+    # Check if running as root
     if [ "$EUID" -ne 0 ]; then
         log_error "This script must be run as root (sudo)"
         exit 1
     fi
     log_info "Running as root ✓"
     
+    # Check for Raspberry Pi
     if ! grep -q "Raspberry Pi" /proc/cpuinfo 2>/dev/null; then
         log_warn "Hardware does not appear to be a Raspberry Pi"
         log_warn "Continuing anyway, but some features may not work"
@@ -88,6 +60,7 @@ phase_preflight() {
         log_info "Detected Raspberry Pi ✓"
     fi
     
+    # Check internet connectivity
     log_info "Checking internet connectivity..."
     if ! timeout 5 curl -s https://www.google.com -o /dev/null 2>/dev/null; then
         log_error "No internet connectivity. Cannot proceed."
@@ -95,8 +68,9 @@ phase_preflight() {
     fi
     log_info "Internet connectivity verified ✓"
     
+    # Check available disk space (need at least 2GB free)
     available_space=$(df /home | tail -1 | awk '{print $4}')
-    if [ "$available_space" -lt 2097152 ]; then
+    if [ "$available_space" -lt 2097152 ]; then  # 2GB in KB
         log_warn "Less than 2GB available disk space (have ${available_space}KB)"
         log_warn "Build may fail. Consider freeing up space."
     else
@@ -114,25 +88,25 @@ phase_dependencies() {
     log_step "Phase 2: Installing System Dependencies"
     
     log_info "Updating package lists..."
-    apt-get update -y
+    apt update
     
     log_info "Installing build tools..."
-    apt-get install -y build-essential pkg-config git
+    apt install -y build-essential pkg-config git
     
     log_info "Installing RTL-SDR and dump1090 dependencies..."
-    apt-get install -y librtlsdr-dev libusb-1.0-0-dev libncurses-dev
+    apt install -y librtlsdr-dev libusb-1.0-0-dev libncurses-dev
     
     log_info "Installing Python and pip..."
-    apt-get install -y python3 python3-pip python3-venv
+    apt install -y python3 python3-pip python3-venv
     
     log_info "Installing pisugar-fx application dependencies..."
     pip3 install requests pillow flask
     
     log_info "Installing avahi daemon for mDNS..."
-    apt-get install -y avahi-daemon
+    apt install -y avahi-daemon
     
     log_info "Installing NetworkManager for Wi-Fi AP configuration..."
-    apt-get install -y network-manager
+    apt install -y network-manager
     
     log_info "All dependencies installed ✓"
 }
@@ -158,6 +132,9 @@ EOF
         echo "blacklist dvb_usb_rtl28xxu" > /etc/modprobe.d/rtlsdr.conf
     fi
     
+    log_warn "RTL-SDR permissions configured"
+    log_warn "You may need to reboot or run: sudo rmmod dvb_usb_rtl28xxu"
+    
     log_info "RTL-SDR configuration complete ✓"
 }
 
@@ -182,9 +159,9 @@ phase_pisugar_repo() {
         cd "$repo_dir"
     fi
     
-    # Verify critical entry point file
-    if [ ! -f "flight_tracker.py" ]; then
-        log_error "Repository missing critical entry point file (flight_tracker.py)"
+    # Verify critical files
+    if [ ! -f "flight_tracker.py" ] && [ ! -f "flight/app.py" ]; then
+        log_error "Repository missing critical files"
         exit 1
     fi
     
@@ -226,15 +203,17 @@ phase_readsb() {
     log_step "Phase 6: Install and Configure readsb"
     
     log_info "Installing readsb package..."
-    apt-get install -y readsb
+    apt install -y readsb
     
     log_info "Configuring readsb for antenna mode (device-type none)..."
     
+    # Backup existing config if it exists
     if [ -f "/etc/default/readsb" ]; then
         cp /etc/default/readsb /etc/default/readsb.backup
         log_info "Backed up existing config to /etc/default/readsb.backup"
     fi
     
+    # Create readsb configuration
     cat > /etc/default/readsb << 'EOF'
 # readsb configuration for pisugar-fx
 # Device type: none (receives data from dump1090 via Beast protocol)
@@ -247,7 +226,7 @@ JSON_OPTIONS="--json-location-accuracy 2 --range-outline-hours 24"
 EOF
     
     log_info "Restarting readsb service..."
-    systemctl restart readsb || true
+    systemctl restart readsb
     sleep 2
     
     if systemctl is-active --quiet readsb; then
@@ -269,6 +248,7 @@ phase_systemd_services() {
     username="$(logname 2>/dev/null || echo 'pi')"
     home_dir="/home/$username"
     
+    # dump1090 service
     log_info "Creating dump1090.service..."
     cat > /etc/systemd/system/dump1090.service << EOF
 [Unit]
@@ -288,6 +268,7 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
     
+    # Create uap0 interface service
     log_info "Creating create-uap0.service..."
     cat > /etc/systemd/system/create-uap0.service << EOF
 [Unit]
@@ -307,6 +288,7 @@ ExecStop=/sbin/iw dev uap0 del
 WantedBy=multi-user.target
 EOF
     
+    # pisugar-fx app service
     log_info "Creating pisugar-fx.service..."
     cat > /etc/systemd/system/pisugar-fx.service << EOF
 [Unit]
@@ -319,7 +301,7 @@ Wants=dump1090.service
 Type=simple
 User=$username
 WorkingDirectory=$home_dir/pisugar-fx
-ExecStart=/usr/bin/python3 $home_dir/pisugar-fx/flight_tracker.py --config $home_dir/pisugar-fx/config/flight_locations.json
+ExecStart=/usr/bin/python3 $home_dir/pisugar-fx/flight/flight_tracker.py
 Restart=on-failure
 RestartSec=10
 
@@ -347,21 +329,31 @@ phase_wifi_ap() {
     
     log_info "Creating Wi-Fi AP connection on uap0..."
     
+    # Check if connection already exists
     if nmcli con show pisugar-ap &>/dev/null; then
         log_info "AP connection 'pisugar-ap' already exists"
-        log_info "Applying password from configuration..."
-        nmcli con modify pisugar-ap wifi-sec.psk "$AP_PASSWORD"
+        log_info "Skipping creation (modify manually if needed)"
     else
-        nmcli con add type wifi ifname uap0 con-name pisugar-ap autoconnect no ssid "${TARGET_HOSTNAME}-AP"
+        # Create AP connection
+        nmcli con add type wifi ifname uap0 con-name pisugar-ap autoconnect no ssid "ronPi-AP"
         nmcli con modify pisugar-ap 802-11-wireless.mode ap
         nmcli con modify pisugar-ap 802-11-wireless.band bg
         nmcli con modify pisugar-ap ipv4.method shared
         nmcli con modify pisugar-ap wifi-sec.key-mgmt wpa-psk
-        nmcli con modify pisugar-ap wifi-sec.psk "$AP_PASSWORD"
-        log_info "AP connection created with SSID '${TARGET_HOSTNAME}-AP' ✓"
+        
+        # Prompt for AP password
+        read -p "Enter Wi-Fi AP password (or press Enter for default): " ap_password
+        if [ -z "$ap_password" ]; then
+            ap_password="pisugarfx2026"
+            log_warn "Using default password: $ap_password"
+        fi
+        
+        nmcli con modify pisugar-ap wifi-sec.psk "$ap_password"
+        log_info "AP connection created with SSID 'ronPi-AP' ✓"
     fi
     
-    home_connection=$(nmcli con show | grep "wifi" | head -1 | awk '{print $1}') || true
+    # Set home Wi-Fi autoconnect priority if it exists
+    home_connection=$(nmcli con show | grep "wifi" | head -1 | awk '{print $1}')
     if [ -n "$home_connection" ] && [ "$home_connection" != "pisugar-ap" ]; then
         log_info "Setting home Wi-Fi connection priority..."
         nmcli con modify "$home_connection" connection.autoconnect yes
@@ -379,22 +371,27 @@ phase_wifi_ap() {
 phase_avahi() {
     log_step "Phase 9: Configure Avahi mDNS Discovery"
     
+    log_info "Checking current hostname..."
     current_hostname=$(hostname)
     log_info "Current hostname: $current_hostname"
     
-    if [ "$current_hostname" != "$TARGET_HOSTNAME" ]; then
-        log_info "Changing hostname from '$current_hostname' to '$TARGET_HOSTNAME'..."
-        hostnamectl set-hostname "$TARGET_HOSTNAME"
-        log_info "Hostname updated ✓"
+    if [ "$current_hostname" != "ronPi" ]; then
+        log_warn "Hostname is not 'ronPi' (found: '$current_hostname')"
+        read -p "Change hostname to 'ronPi'? (y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            hostnamectl set-hostname ronPi
+            log_info "Hostname changed to ronPi ✓"
+        fi
     else
-        log_info "Hostname is already $TARGET_HOSTNAME ✓"
+        log_info "Hostname is correct (ronPi) ✓"
     fi
     
     log_info "Enabling avahi-daemon..."
     systemctl enable avahi-daemon
-    systemctl restart avahi-daemon || true
+    systemctl restart avahi-daemon
     
-    log_info "mDNS discovery configured (${TARGET_HOSTNAME}.local) ✓"
+    log_info "mDNS discovery configured (ronPi.local) ✓"
 }
 
 ################################################################################
@@ -445,8 +442,8 @@ EOF
 phase_validation() {
     log_step "Phase 11: Validation and Component Testing"
     
-    home_dir="/home/$(logname 2>/dev/null || echo 'pi')"
     log_info "Checking dump1090 binary..."
+    home_dir="/home/$(logname 2>/dev/null || echo 'pi')"
     if [ -f "$home_dir/dump1090/dump1090" ] && [ -x "$home_dir/dump1090/dump1090" ]; then
         log_info "dump1090 binary found and executable ✓"
     else
@@ -459,8 +456,8 @@ phase_validation() {
     fi
     
     log_info "Checking pisugar-fx Python syntax..."
-    if python3 -m py_compile "$home_dir/pisugar-fx/flight_tracker.py" 2>/dev/null; then
-        log_info "pisugar-fx flight_tracker.py has valid syntax ✓"
+    if python3 -m py_compile "$home_dir/pisugar-fx/flight/flight_tracker.py" 2>/dev/null; then
+        log_info "pisugar-fx Python files have valid syntax ✓"
     else
         log_warn "Python syntax check failed - check flight_tracker.py for errors"
     fi
@@ -501,13 +498,27 @@ phase_summary() {
     echo "  - dump1090 (ADS-B decoder, port 31005)"
     echo "  - create-uap0 (virtual Wi-Fi interface setup)"
     echo "  - readsb (aircraft aggregator)"
-    echo "  - pisugar-fx (display application via flight_tracker.py)"
+    echo "  - pisugar-fx (display application)"
     echo ""
     
     echo "Network configuration:"
     echo "  - Home Wi-Fi: client mode on wlan0"
-    echo "  - Access Point: ${TARGET_HOSTNAME}-AP on uap0 (WPA2)"
-    echo "  - mDNS: ${TARGET_HOSTNAME}.local:5000"
+    echo "  - Access Point: ronPi-AP on uap0 (WPA2)"
+    echo "  - mDNS: ronPi.local:5000"
+    echo ""
+    
+    echo "Next steps:"
+    echo "  1. Reboot to start all services:"
+    echo "     sudo reboot"
+    echo ""
+    echo "  2. After boot, check service status:"
+    echo "     systemctl status pisugar-fx"
+    echo "     journalctl -u pisugar-fx -f"
+    echo ""
+    echo "  3. Connect to ronPi-AP from your phone and visit:"
+    echo "     http://ronPi.local:5000"
+    echo ""
+    echo "  4. Plug in your RTL-SDR dongle and verify aircraft are received"
     echo ""
     
     echo -e "${YELLOW}Important Notes:${NC}"
@@ -517,13 +528,15 @@ phase_summary() {
     echo "  - readsb reads from dump1090 via Beast protocol on port 31005"
     echo ""
     
-    if [ "$AUTO_REBOOT" = "true" ]; then
-        log_info "Auto-reboot enabled. Rebooting in 10 seconds... press Ctrl+C to cancel"
+    read -p "Reboot now to start services? (y/n) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Rebooting in 10 seconds... press Ctrl+C to cancel"
         sleep 10
         reboot
     else
-        log_info "Setup complete. Auto-reboot is disabled in setup.conf."
-        log_info "Remember to restart services manually or type: sudo reboot"
+        log_info "Setup complete. Remember to reboot when ready."
+        log_info "  sudo reboot"
     fi
 }
 
@@ -539,6 +552,7 @@ main() {
     echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
     echo ""
     
+    # Run all phases
     phase_preflight
     phase_dependencies
     phase_rtlsdr_permissions
