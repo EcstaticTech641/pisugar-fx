@@ -65,7 +65,7 @@ class FlightTracker:
         from flight.history import TrackHistory
         self.history = TrackHistory(
             trail_length=getattr(self.settings, "trail_length", 8),
-            ghost_holdover_seconds=getattr(self.settings, "ghost_holdover_seconds", 15),
+            ghost_holdover_seconds=getattr(self.settings, "ghost_holdover_seconds", 60),
             trail_enabled=getattr(self.settings, "trail_enabled", True),
             ghost_enabled=getattr(self.settings, "ghost_enabled", True)
         )
