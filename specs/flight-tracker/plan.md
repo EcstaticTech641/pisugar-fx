@@ -1,8 +1,11 @@
 # Implementation Plan: Flight Tracker Display
 
-**Status**: Active  
+**Status**: ✅ COMPLETE — Historical Record  
 **Date**: 2026-04-24  
+**Completed**: 2026-06-22  
 **Spec**: specs/flight-tracker/spec.md
+
+> **Note:** This plan is preserved as a historical record of the original implementation stages. All four stages were completed successfully. For the current architecture and implemented feature set, see [`status.md`](./status.md). For the updated specification reflecting the built system, see [`spec.md`](./spec.md).
 
 ## Summary
 
