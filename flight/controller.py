@@ -7,7 +7,7 @@ import time
 import signal
 from typing import Optional
 
-from flight.config import load_config, FlightTrackerConfig
+from flight.config import load_config, FlightTrackerConfig, _default_config_path
 from flight.display import FlightRadarScreen
 from flight.web_server import FlightWebServer, SharedState
 
@@ -17,10 +17,36 @@ logger = logging.getLogger(__name__)
 class FlightTracker:
     """Main flight tracker application controller."""
 
-    def __init__(self, config_path: Optional[str] = None):
-        """Initialize flight tracker."""
-        # Load configuration
-        self.config: FlightTrackerConfig = load_config(config_path)
+    def __init__(
+        self,
+        config_path: Optional[str] = None,
+        config: Optional[FlightTrackerConfig] = None,
+    ):
+        """Initialize flight tracker.
+
+        Args:
+            config_path: Path to flight_locations.json.  Used both to load the
+                         initial config (when ``config`` is None) and as the
+                         file to poll for hot-reload in Phase 4.
+            config:      Pre-built ``FlightTrackerConfig`` (e.g. from
+                         ``flight_tracker.py`` after applying CLI overrides).
+                         When supplied, ``config_path`` is still stored for the
+                         hot-reload poll but the load step is skipped.
+        """
+        # Resolve config path first — needed for hot-reload even when a
+        # pre-built config object is passed in.
+        self._config_path: str = (
+            os.path.expanduser(config_path)
+            if config_path
+            else _default_config_path()
+        )
+
+        # Load or adopt configuration
+        if config is not None:
+            self.config = config
+        else:
+            self.config = load_config(self._config_path)
+
         self.locations = self.config.locations
         self.settings = self.config.settings
 
@@ -381,15 +407,25 @@ class FlightTracker:
         logger.info("Flight tracker stopped")
 
 
-def main(config_path: Optional[str] = None):
-    """Main entry point."""
+def main(
+    config_path: Optional[str] = None,
+    config: Optional[FlightTrackerConfig] = None,
+):
+    """Main entry point.
+
+    Args:
+        config_path: Path to the JSON config file.
+        config:      Pre-built config (e.g. with CLI overrides already applied).
+                     When provided, ``config_path`` is still used for hot-reload
+                     polling so it should point to the same file.
+    """
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     try:
-        tracker = FlightTracker(config_path=config_path)
+        tracker = FlightTracker(config_path=config_path, config=config)
         tracker.run()
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)

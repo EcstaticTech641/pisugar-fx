@@ -10,7 +10,7 @@ Real-time aircraft tracking display for Raspberry Pi Zero 2W with WhisPlay 1.69"
 
 ### 1. Configure the Data Source
 
-Edit `config/flight_locations.json`. The `"source"` setting determines which data backend the app uses:
+Edit `config/flight_locations.json`. The `"source"` setting determines which data backend the app uses: 
 
 ```json
 {
