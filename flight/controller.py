@@ -1,6 +1,7 @@
 """Main flight tracker application controller."""
 
 import logging
+import os
 import sys
 import threading
 import time
@@ -10,6 +11,7 @@ from typing import Optional
 from flight.config import load_config, FlightTrackerConfig, _default_config_path
 from flight.display import FlightRadarScreen
 from flight.web_server import FlightWebServer, SharedState
+from flight.runtime_settings import RuntimeSettings
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +49,23 @@ class FlightTracker:
         else:
             self.config = load_config(self._config_path)
 
+        # Initialize thread-safe settings wrapper
+        self._runtime = RuntimeSettings(self.config.settings)
+
         self.locations = self.config.locations
-        self.settings = self.config.settings
+        self.settings = self._runtime.get()  # Keep for initial compatibility but use _runtime.get() for live settings
+
+        # Polling & dimming metrics
+        try:
+            self._config_mtime = os.path.getmtime(self._config_path)
+        except Exception:
+            self._config_mtime = 0.0
+        self._last_reload_check = time.time()
+        self.RELOAD_CHECK_INTERVAL = 10.0
+
+        # Auto-dim state tracking
+        self._current_brightness = self.settings.brightness
+        self._last_input_or_refresh = time.time()
 
         # Initialize data source
         from flight.source import LocalSource
@@ -106,6 +123,9 @@ class FlightTracker:
             self._web_server = FlightWebServer(
                 self._shared_state,
                 port=getattr(self.settings, "web_server_port", 5000),
+                runtime_settings=self._runtime,
+                auth=self.config.auth,
+                config_path=self._config_path,
             )
             self._web_server.start()
         else:
@@ -221,14 +241,16 @@ class FlightTracker:
 
     def _update_led(self, aircraft_count: int) -> tuple[int, int, int]:
         """Map aircraft count to RGB LED color as a density indicator."""
+        s = self._runtime.get()
+        t = s.led_thresholds if hasattr(s, "led_thresholds") else [5, 15, 30]
         # Calculate color
         if aircraft_count == 0:
             r, g, b = 0, 0, 255       # blue — nothing around
-        elif aircraft_count <= 5:
+        elif aircraft_count <= t[0]:
             r, g, b = 0, 255, 0       # green
-        elif aircraft_count <= 15:
+        elif aircraft_count <= t[1]:
             r, g, b = 255, 255, 0     # yellow
-        elif aircraft_count <= 30:
+        elif aircraft_count <= t[2]:
             r, g, b = 255, 80, 0      # orange
         else:
             r, g, b = 255, 0, 0       # red — busy sky
@@ -244,12 +266,13 @@ class FlightTracker:
     def _should_cycle_location(self) -> bool:
         """Check if it's time to cycle to next location."""
         elapsed = time.time() - self.location_start_time
-        should_cycle = elapsed >= self.settings.display_duration_seconds or self.button_pressed
+        s = self._runtime.get()
+        should_cycle = elapsed >= s.display_duration_seconds or self.button_pressed
 
         if should_cycle and self.button_pressed:
             logger.debug(f"Cycle triggered by button press (elapsed={elapsed:.1f}s)")
         elif should_cycle:
-            logger.debug(f"Cycle triggered by timer ({elapsed:.1f}s >= {self.settings.display_duration_seconds}s)")
+            logger.debug(f"Cycle triggered by timer ({elapsed:.1f}s >= {s.display_duration_seconds}s)")
 
         return should_cycle
 
@@ -259,12 +282,13 @@ class FlightTracker:
         self.current_location_index = (self.current_location_index + 1) % len(self.locations)
         self.location_start_time = time.time()
         
+        s = self._runtime.get()
         from flight.history import TrackHistory
         self.history = TrackHistory(
-            trail_length=getattr(self.settings, "trail_length", 8),
-            ghost_holdover_seconds=getattr(self.settings, "ghost_holdover_seconds", 60),
-            trail_enabled=getattr(self.settings, "trail_enabled", True),
-            ghost_enabled=getattr(self.settings, "ghost_enabled", True)
+            trail_length=getattr(s, "trail_length", 8),
+            ghost_holdover_seconds=getattr(s, "ghost_holdover_seconds", 60),
+            trail_enabled=getattr(s, "trail_enabled", True),
+            ghost_enabled=getattr(s, "ghost_enabled", True)
         )
         
         logger.info(
@@ -276,6 +300,10 @@ class FlightTracker:
         """Fetch flights and update current screen."""
         location = self.locations[self.current_location_index]
 
+        s = self._runtime.get()
+        # Resolve radius: CLI/Web override settings.radius_miles takes precedence, then location.radius_miles, fallback to 100
+        radius = s.radius_miles if s.radius_miles is not None else getattr(location, "radius_miles", 100)
+
         if (
             not self.current_screen
             or self.current_screen.location_name != location.name
@@ -284,7 +312,8 @@ class FlightTracker:
                 location_name=location.name,
                 latitude=location.latitude,
                 longitude=location.longitude,
-                radius_miles=location.radius_miles,
+                radius_miles=radius,
+                callsign_rule=getattr(s, "callsign_rule", "nearest"),
             )
 
         # No coordinates yet — try aircraft centroid fallback (local/antenna mode only)
@@ -305,11 +334,14 @@ class FlightTracker:
                     )
                     # Recreate screen now that we have a position
                     location = self.locations[self.current_location_index]
+                    s = self._runtime.get()
+                    radius = s.radius_miles if s.radius_miles is not None else getattr(location, "radius_miles", 100)
                     self.current_screen = FlightRadarScreen(
                         location_name=location.name,
                         latitude=location.latitude,
                         longitude=location.longitude,
-                        radius_miles=location.radius_miles,
+                        radius_miles=radius,
+                        callsign_rule=getattr(s, "callsign_rule", "nearest"),
                     )
                     logger.info(f"Location resolved via aircraft centroid: {city}")
                 else:
@@ -323,16 +355,105 @@ class FlightTracker:
                 self.last_display_update = time.time()
                 return
 
+        s = self._runtime.get()
+        radius = s.radius_miles if s.radius_miles is not None else getattr(location, "radius_miles", 100)
         flights = self.api.fetch_flights(
             latitude=location.latitude,
             longitude=location.longitude,
-            radius_miles=location.radius_miles,
+            radius_miles=radius,
             use_cache=True,
         )
         self.last_display_update = time.time()  # fix: prevent immediate re-fetch
         
         enriched_flights = self.history.update(flights)
         self.current_screen.set_aircraft(enriched_flights)
+
+    def _check_hot_reload(self) -> None:
+        """Poll configuration file modification time and reload changed settings."""
+        now = time.time()
+        if now - self._last_reload_check < self.RELOAD_CHECK_INTERVAL:
+            return
+        self._last_reload_check = now
+
+        try:
+            mtime = os.path.getmtime(self._config_path)
+        except Exception as e:
+            logger.debug(f"Failed to check config mtime: {e}")
+            return
+
+        if mtime != self._config_mtime:
+            logger.info("Configuration file change detected. Reloading settings...")
+            try:
+                new_config = load_config(self._config_path)
+                
+                # Check for restart-required settings changes
+                old_s = self._runtime.get()
+                new_s = new_config.settings
+                
+                restart_keys = ["source", "web_server_enabled", "web_server_port", "rotation"]
+                for k in restart_keys:
+                    old_val = getattr(old_s, k, None)
+                    new_val = getattr(new_s, k, None)
+                    if old_val != new_val:
+                        logger.warning(
+                            f"Setting '{k}' changed from '{old_val}' to '{new_val}'. "
+                            "A restart is required for this setting to take effect."
+                        )
+
+                # Atomically update runtime settings
+                self._runtime.update(new_s)
+                self._config_mtime = mtime
+                logger.info("Settings hot-reloaded successfully.")
+
+                # Apply brightness immediately if auto-dim is not actively dimming
+                s = self._runtime.get()
+                if not s.auto_dim_enabled or (time.time() - self._last_input_or_refresh < s.auto_dim_after_seconds):
+                    if self.has_display and self.display_board:
+                        try:
+                            self.display_board.set_backlight(s.brightness)
+                            self._current_brightness = s.brightness
+                        except Exception as e:
+                            logger.error(f"Failed to update backlight on hot-reload: {e}")
+
+                # Rebuild history with new settings (trail_length, ghost_holdover_seconds, etc.)
+                from flight.history import TrackHistory
+                self.history = TrackHistory(
+                    trail_length=getattr(s, "trail_length", 8),
+                    ghost_holdover_seconds=getattr(s, "ghost_holdover_seconds", 60),
+                    trail_enabled=getattr(s, "trail_enabled", True),
+                    ghost_enabled=getattr(s, "ghost_enabled", True)
+                )
+
+            except Exception as e:
+                logger.error(f"Error during settings hot-reload: {e}", exc_info=True)
+
+    def _check_auto_dim(self, current_time: float) -> None:
+        """Dim screen backlight after period of inactivity if auto_dim is enabled."""
+        s = self._runtime.get()
+        if not s.auto_dim_enabled:
+            # If auto-dim was just disabled, restore brightness to configured value
+            if self._current_brightness != s.brightness:
+                if self.has_display and self.display_board:
+                    try:
+                        self.display_board.set_backlight(s.brightness)
+                        self._current_brightness = s.brightness
+                    except Exception as e:
+                        logger.error(f"Failed to restore backlight: {e}")
+            return
+
+        inactive_dur = current_time - self._last_input_or_refresh
+        target_brightness = s.brightness
+        if inactive_dur >= s.auto_dim_after_seconds:
+            target_brightness = s.auto_dim_brightness
+
+        if self._current_brightness != target_brightness:
+            if self.has_display and self.display_board:
+                try:
+                    logger.info(f"Auto-dim: setting backlight from {self._current_brightness} to {target_brightness}")
+                    self.display_board.set_backlight(target_brightness)
+                    self._current_brightness = target_brightness
+                except Exception as e:
+                    logger.error(f"Failed to set backlight in auto-dim: {e}")
 
     def run(self) -> None:
         """Main application loop."""
@@ -341,6 +462,7 @@ class FlightTracker:
         logger.info(f"Tracking {len(self.locations)} locations")
 
         self.location_start_time = time.time()
+        self._last_input_or_refresh = time.time()
         loop_count = 0
         last_log_time = time.time()
         last_displayed_time = 0
@@ -351,11 +473,21 @@ class FlightTracker:
                     loop_count += 1
                     current_time = time.time()
 
+                    # Perform hot-reload and auto-dim checks
+                    self._check_hot_reload()
+                    self._check_auto_dim(current_time)
+
+                    s = self._runtime.get()
+
+                    # Reset inactivity timer on location cycling (e.g. button pressed)
+                    if self.button_pressed:
+                        self._last_input_or_refresh = current_time
+
                     if current_time - last_log_time >= 5:
                         elapsed_location = current_time - self.location_start_time
                         logger.debug(
                             f"[Loop {loop_count}] Location: {self.current_location_index + 1}/{len(self.locations)}, "
-                            f"Elapsed: {elapsed_location:.1f}s/{self.settings.display_duration_seconds}s, "
+                            f"Elapsed: {elapsed_location:.1f}s/{s.display_duration_seconds}s, "
                             f"Aircraft: {len(self.current_screen.aircraft) if self.current_screen else 0}, "
                             f"Button: {self.button_pressed}"
                         )
@@ -367,10 +499,12 @@ class FlightTracker:
                         last_displayed_time = 0
 
                     time_since_update = current_time - self.last_display_update
-                    if time_since_update >= self.settings.refresh_interval_seconds:
+                    if time_since_update >= s.refresh_interval_seconds:
                         logger.debug(f"Fetching aircraft (last update: {time_since_update:.1f}s ago)")
                         self._update_current_screen()
                         last_displayed_time = 0
+                        # Also count data fetch as activity to prevent dimming while active
+                        self._last_input_or_refresh = current_time
 
                     if current_time - last_displayed_time >= 0.5:
                         if self.current_screen:
@@ -381,7 +515,8 @@ class FlightTracker:
                                 image,
                                 self.current_screen.aircraft,
                                 self.current_screen.location_name,
-                                led_color=led_color
+                                led_color=led_color,
+                                jpeg_quality=s.web_mirror_jpeg_quality,
                             )
                             self._display_image(image)
                             
