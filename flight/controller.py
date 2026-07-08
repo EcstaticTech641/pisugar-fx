@@ -9,9 +9,12 @@ import signal
 from typing import Optional
 
 from flight.config import load_config, FlightTrackerConfig, _default_config_path
-from flight.display import FlightRadarScreen
+from flight.display import FlightRadarScreen, render_aircraft_list, render_aircraft_detail
 from flight.web_server import FlightWebServer, SharedState
 from flight.runtime_settings import RuntimeSettings
+from flight.button import ButtonClassifier, ButtonEvent
+from flight.display_modes import DisplayStateMachine, DisplayMode, Aircraft
+
 
 logger = logging.getLogger(__name__)
 
@@ -131,9 +134,11 @@ class FlightTracker:
         else:
             self._web_server = None
 
-        # Button event handling
-        self.button_pressed = False
-        self._button_thread = None
+        # Button event handling & state machine initialization
+        self.display_sm = DisplayStateMachine()
+        self.button_classifier: Optional[ButtonClassifier] = None
+        self._location_lat = 0.0
+        self._location_lon = 0.0
         self._setup_button_handler()
 
         # Shutdown handler
@@ -173,45 +178,30 @@ class FlightTracker:
             self.has_display = False
 
     def _setup_button_handler(self) -> None:
-        """Setup button event monitoring."""
-        if not self.has_display:
+        """Setup button event monitoring using ButtonClassifier."""
+        if not self.has_display or not self.display_board:
             logger.debug("Button handler disabled (no display)")
             return
 
+        def on_button_event(event: ButtonEvent):
+            logger.info(f"🔘 Button event: {event.value}")
+            if event == ButtonEvent.SINGLE_CLICK:
+                self.display_sm.handle_single_click()
+            elif event == ButtonEvent.DOUBLE_CLICK:
+                self.display_sm.handle_double_click()
+            elif event == ButtonEvent.LONG_PRESS:
+                self.display_sm.handle_long_press()
+
         try:
-            self._button_thread = threading.Thread(
-                target=self._monitor_button,
-                daemon=True,
+            self.button_classifier = ButtonClassifier(
+                button_state_fn=self.display_board.button_pressed,
+                on_event=on_button_event,
             )
-            self._button_thread.start()
-            logger.info("Button monitoring started")
+            self.button_classifier.start()
+            logger.info("Button classifier started (single/double/long press)")
         except Exception as e:
             logger.warning(f"Failed to setup button handler: {e}")
 
-    def _monitor_button(self) -> None:
-        """Monitor button press events (runs in background thread)."""
-        logger.debug("Button monitor thread started")
-
-        if not self.display_board:
-            logger.debug("No display board - button monitoring disabled")
-            return
-
-        last_state = False
-
-        while self.running:
-            try:
-                current_state = self.display_board.button_pressed()
-
-                if current_state and not last_state:
-                    logger.info("🔘 Button pressed - cycling to next location")
-                    self.button_pressed = True
-
-                last_state = current_state
-                time.sleep(0.1)
-
-            except Exception as e:
-                logger.error(f"Button monitor error: {e}")
-                time.sleep(0.5)
 
     def _display_image(self, image) -> None:
         """Send image to display."""
@@ -267,18 +257,15 @@ class FlightTracker:
         """Check if it's time to cycle to next location."""
         elapsed = time.time() - self.location_start_time
         s = self._runtime.get()
-        should_cycle = elapsed >= s.display_duration_seconds or self.button_pressed
+        should_cycle = elapsed >= s.display_duration_seconds
 
-        if should_cycle and self.button_pressed:
-            logger.debug(f"Cycle triggered by button press (elapsed={elapsed:.1f}s)")
-        elif should_cycle:
+        if should_cycle:
             logger.debug(f"Cycle triggered by timer ({elapsed:.1f}s >= {s.display_duration_seconds}s)")
 
         return should_cycle
 
     def _cycle_to_next_location(self) -> None:
         """Move to next location in the list."""
-        self.button_pressed = False
         self.current_location_index = (self.current_location_index + 1) % len(self.locations)
         self.location_start_time = time.time()
         
@@ -367,6 +354,44 @@ class FlightTracker:
         
         enriched_flights = self.history.update(flights)
         self.current_screen.set_aircraft(enriched_flights)
+
+        aircraft_objects = [self._flight_dict_to_aircraft(f) for f in enriched_flights]
+        self.display_sm.set_aircraft(aircraft_objects)
+        self._location_lat = location.latitude
+        self._location_lon = location.longitude
+
+    def _flight_dict_to_aircraft(self, f: dict) -> Aircraft:
+        """Convert a flight dictionary to an Aircraft dataclass object."""
+        return Aircraft(
+            icao=f.get("icao", ""),
+            call=f.get("call", ""),
+            lat=f.get("lat", 0.0),
+            lon=f.get("lon", 0.0),
+            alt_ft=f.get("alt_ft", 0),
+            speed=f.get("speed", 0),
+            heading=f.get("heading", 0),
+            type=f.get("type", ""),
+            reg=f.get("reg", ""),
+            squawk=f.get("squawk", ""),
+            on_ground=f.get("on_ground", False),
+            rssi=f.get("rssi"),
+            seen=f.get("seen"),
+        )
+
+    def _render_current_mode(self):
+        """Render active display mode."""
+        if self.display_sm.mode == DisplayMode.RADAR:
+            return self.current_screen.render()
+        elif self.display_sm.mode == DisplayMode.AIRCRAFT_LIST:
+            return render_aircraft_list(self.display_sm.aircraft, self.display_sm.selected_index)
+        elif self.display_sm.mode == DisplayMode.DETAIL:
+            selected = self.display_sm.get_selected_aircraft()
+            if selected:
+                return render_aircraft_detail(selected, self._location_lat, self._location_lon)
+            self.display_sm.mode = DisplayMode.RADAR
+            return self.current_screen.render()
+        return self.current_screen.render()
+
 
     def _check_hot_reload(self) -> None:
         """Poll configuration file modification time and reload changed settings."""
@@ -476,12 +501,9 @@ class FlightTracker:
                     # Perform hot-reload and auto-dim checks
                     self._check_hot_reload()
                     self._check_auto_dim(current_time)
+                    self.display_sm.check_detail_timeout()
 
                     s = self._runtime.get()
-
-                    # Reset inactivity timer on location cycling (e.g. button pressed)
-                    if self.button_pressed:
-                        self._last_input_or_refresh = current_time
 
                     if current_time - last_log_time >= 5:
                         elapsed_location = current_time - self.location_start_time
@@ -489,12 +511,12 @@ class FlightTracker:
                             f"[Loop {loop_count}] Location: {self.current_location_index + 1}/{len(self.locations)}, "
                             f"Elapsed: {elapsed_location:.1f}s/{s.display_duration_seconds}s, "
                             f"Aircraft: {len(self.current_screen.aircraft) if self.current_screen else 0}, "
-                            f"Button: {self.button_pressed}"
+                            f"Mode: {self.display_sm.mode.value}"
                         )
                         last_log_time = current_time
 
                     if self._should_cycle_location():
-                        logger.info(f"🔄 Cycling to next location (button_pressed={self.button_pressed})")
+                        logger.info("🔄 Cycling to next location")
                         self._cycle_to_next_location()
                         last_displayed_time = 0
 
@@ -508,7 +530,7 @@ class FlightTracker:
 
                     if current_time - last_displayed_time >= 0.5:
                         if self.current_screen:
-                            image = self.current_screen.render()
+                            image = self._render_current_mode()
                             led_color = self._update_led(len(self.current_screen.aircraft))
                             
                             self._shared_state.update(

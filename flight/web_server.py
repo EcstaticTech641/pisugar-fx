@@ -59,6 +59,7 @@ class SharedState:
         aircraft: List[dict],
         location_name: str,
         led_color: tuple = (0, 0, 255),
+        jpeg_quality: int = 85,
     ) -> None:
         """
         Called from the controller after every render().
@@ -68,11 +69,12 @@ class SharedState:
             aircraft:      distance-filtered aircraft list
             location_name: FlightRadarScreen.location_name
             led_color:     (r, g, b) tuple matching the density LED colour
+            jpeg_quality:  JPEG compression quality (1–95)
         """
         jpeg: Optional[bytes] = None
         try:
             buf = io.BytesIO()
-            image.save(buf, format="JPEG", quality=85)
+            image.save(buf, format="JPEG", quality=jpeg_quality)
             jpeg = buf.getvalue()
         except Exception as exc:
             logger.warning("[SharedState] JPEG encode failed: %s", exc)
@@ -110,9 +112,19 @@ class SharedState:
 class FlightWebServer:
     """Lightweight Flask server running as a daemon thread alongside the main loop."""
 
-    def __init__(self, shared_state: SharedState, port: int = 5000) -> None:
+    def __init__(
+        self,
+        shared_state: SharedState,
+        port: int = 5000,
+        runtime_settings=None,
+        auth=None,
+        config_path: Optional[str] = None,
+    ) -> None:
         self._state = shared_state
         self._port = port
+        self._runtime = runtime_settings
+        self._auth = auth
+        self._config_path = config_path
         self._thread: Optional[threading.Thread] = None
 
     def start(self) -> None:

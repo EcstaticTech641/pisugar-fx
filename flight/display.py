@@ -7,10 +7,41 @@ from typing import List, Dict, Any, Tuple, Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
-logger = logging.getLogger(__name__)
+_cached_fonts = None
+
+def _get_fonts():
+    """Load and cache fonts globally to avoid reloading them on every frame."""
+    global _cached_fonts
+    if _cached_fonts is not None:
+        return _cached_fonts
+        
+    fonts = {}
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    ]
+    
+    for size_name, size_px in [("small", 8), ("medium", 11), ("large", 14)]:
+        for path in font_paths:
+            try:
+                fonts[size_name] = ImageFont.truetype(path, size_px)
+                break
+            except (OSError, IOError):
+                continue
+        else:
+            # Fallback to default
+            fonts[size_name] = ImageFont.load_default()
+            
+    _cached_fonts = fonts
+    return _cached_fonts
 
 
 class FlightRadarScreen:
+
     """Renders a radar-style display of aircraft around a location."""
     
     # Display dimensions
@@ -43,11 +74,13 @@ class FlightRadarScreen:
         latitude: Optional[float],
         longitude: Optional[float],
         radius_miles: int = 100,
+        callsign_rule: str = "nearest",
     ):
         self.location_name = location_name
         self.center_lat = latitude
         self.center_lon = longitude
         self.radius_miles = radius_miles
+        self.callsign_rule = callsign_rule
         self.aircraft: List[Dict[str, Any]] = []
         self.timestamp = datetime.now()
         self._fonts = self._load_fonts()
@@ -59,28 +92,7 @@ class FlightRadarScreen:
     
     def _load_fonts(self) -> Dict[str, ImageFont.FreeTypeFont]:
         """Load TrueType fonts, falling back to default if needed."""
-        fonts = {}
-        font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-        ]
-        
-        for size_name, size_px in [("small", 8), ("medium", 11), ("large", 14)]:
-            for path in font_paths:
-                try:
-                    fonts[size_name] = ImageFont.truetype(path, size_px)
-                    break
-                except (OSError, IOError):
-                    continue
-            else:
-                # Fallback to default
-                fonts[size_name] = ImageFont.load_default()
-        
-        return fonts
+        return _get_fonts()
     
     @property
     def PX_PER_MILE(self) -> float:
@@ -419,3 +431,105 @@ class FlightRadarScreen:
                     fill=self.C_CALLSIGN,
                     font=self._fonts["small"],
                 )
+
+
+def render_aircraft_list(aircraft: list, selected_index: int,
+                          width: int = 240, height: int = 280) -> Image.Image:
+    img = Image.new("RGB", (width, height), color=(6, 11, 16))
+    draw = ImageDraw.Draw(img)
+    fonts = _get_fonts()
+    font_s = fonts["small"]
+    font_m = fonts["medium"]
+
+    draw.rectangle([(0, 0), (width, 28)], fill=(11, 20, 32))
+    draw.text((8, 8), f"{len(aircraft)} aircraft", fill=(0, 229, 255), font=font_m)
+    draw.line([(0, 28), (width, 28)], fill=(26, 58, 92), width=1)
+
+    if not aircraft:
+        draw.text((8, 48), "No aircraft in range", fill=(140, 140, 140), font=font_s)
+        # Footer
+        draw.rectangle([(0, height - 16), (width, height)], fill=(11, 20, 32))
+        draw.line([(0, height - 16), (width, height - 16)], fill=(26, 58, 92), width=1)
+        draw.text((8, height - 13), "click=next  2x=detail  hold=back",
+                  fill=(74, 112, 144), font=font_s)
+        return img
+
+    row_height = 24
+    visible_rows = (height - 28 - 16) // row_height
+    start = max(0, selected_index - visible_rows + 1)
+    start = min(start, max(0, len(aircraft) - visible_rows))
+    visible = aircraft[start:start + visible_rows]
+
+    y = 30
+    for i, ac in enumerate(visible):
+        actual_index = start + i
+        is_selected = (actual_index == selected_index)
+        if is_selected:
+            draw.rectangle([(0, y), (width, y + row_height)], fill=(0, 50, 70))
+        color = (255, 255, 255) if is_selected else (200, 223, 240)
+        alt_str = "ground" if ac.on_ground else f"{ac.alt_ft:,}ft"
+        
+        draw.text((8, y + 6), f"{ac.call or '—':<8}", fill=color, font=font_s)
+        draw.text((90, y + 6), f"{alt_str}", fill=color, font=font_s)
+        draw.text((170, y + 6), f"{ac.speed}kt", fill=color, font=font_s)
+        y += row_height
+
+    draw.rectangle([(0, height - 16), (width, height)], fill=(11, 20, 32))
+    draw.line([(0, height - 16), (width, height - 16)], fill=(26, 58, 92), width=1)
+    draw.text((8, height - 13), "click=next  2x=detail  hold=back",
+              fill=(74, 112, 144), font=font_s)
+    return img
+
+
+def render_aircraft_detail(ac, observer_lat: Optional[float], observer_lon: Optional[float],
+                            width: int = 240, height: int = 280) -> Image.Image:
+    from flight.source import _haversine_miles  # reuse existing helper
+
+    img = Image.new("RGB", (width, height), color=(6, 11, 16))
+    draw = ImageDraw.Draw(img)
+    fonts = _get_fonts()
+    font_s = fonts["small"]
+    font_m = fonts["medium"]
+    font_l = fonts["large"]
+
+    draw.rectangle([(0, 0), (width, 36)], fill=(11, 20, 32))
+    draw.text((8, 8), ac.call or "Unknown", fill=(0, 229, 255), font=font_l)
+    draw.line([(0, 36), (width, 36)], fill=(26, 58, 92), width=1)
+
+    if observer_lat is not None and observer_lon is not None and ac.lat is not None and ac.lon is not None:
+        distance = _haversine_miles(observer_lat, observer_lon, ac.lat, ac.lon)
+        dist_str = f"{distance:.1f} mi"
+    else:
+        dist_str = "—"
+
+    rows = [
+        ("ICAO Hex", ac.icao),
+        ("Type", ac.type or "—"),
+        ("Reg", ac.reg or "—"),
+        ("Squawk", ac.squawk or "—"),
+        ("", ""),
+        ("Altitude", "ground" if ac.on_ground else f"{ac.alt_ft:,} ft"),
+        ("Speed", f"{ac.speed} kts"),
+        ("Heading", f"{ac.heading}°"),
+        ("", ""),
+        ("Distance", dist_str),
+        ("Position", f"{ac.lat:.3f}, {ac.lon:.3f}" if ac.lat is not None else "—"),
+    ]
+    if ac.rssi is not None:
+        rows.append(("Signal", f"{ac.rssi:.1f} dBFS"))
+    if ac.seen is not None:
+        rows.append(("Last seen", f"{ac.seen:.1f}s ago"))
+
+    y = 44
+    for label, value in rows:
+        if label:
+            draw.text((8, y), label, fill=(74, 112, 144), font=font_s)
+            draw.text((105, y), str(value), fill=(255, 255, 255), font=font_s)
+        y += 16
+
+    draw.rectangle([(0, height - 16), (width, height)], fill=(11, 20, 32))
+    draw.line([(0, height - 16), (width, height - 16)], fill=(26, 58, 92), width=1)
+    draw.text((8, height - 13), "click=next aircraft  hold=back",
+              fill=(74, 112, 144), font=font_s)
+    return img
+
