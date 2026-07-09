@@ -8,6 +8,9 @@
     "rotation": 0,
     "random_location_enabled": false,
     "web_mirror_jpeg_quality": 85,
-    "callsign_rule": "nearest"
+    "callsign_rule": "nearest",
+    "web_settings_user": "admin",
+    "web_settings_password": "changeme",
+    "web_settings_secret_key": ""
   }
 }

@@ -11,10 +11,16 @@ Endpoints
   GET /aircraft.json Filtered aircraft list as JSON (same data the display uses)
   GET /map           Leaflet.js interactive dark map with click-to-detail panel
   GET /status        JSON: location name, count, uptime
+  GET /login         Settings login page
+  POST /login        Authenticate and create session
+  GET /logout        Clear session and redirect to /
+  GET /settings      Settings editor (requires auth)
+  POST /settings     Save settings (requires auth)
 """
 
 from __future__ import annotations
 
+import functools
 import io
 import json
 import logging
@@ -28,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 # Directory that holds the static favicon/manifest pack
 _ASSETS_DIR = os.path.join(os.path.dirname(__file__), "web-assets")
-
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +111,21 @@ class SharedState:
 
 
 # ---------------------------------------------------------------------------
+# Auth decorator for /settings routes
+# ---------------------------------------------------------------------------
+
+def _require_settings_auth(f):
+    """Decorator: require valid settings session to access route."""
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        from flask import session, redirect, url_for, request
+        if not session.get("settings_authenticated"):
+            return redirect(url_for("settings_login", next=request.url))
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ---------------------------------------------------------------------------
 # FlightWebServer
 # ---------------------------------------------------------------------------
 
@@ -138,10 +158,11 @@ class FlightWebServer:
         ip = _get_local_ip()
         logger.info("[WebServer] Radar mirror:    http://%s:%d/", ip, self._port)
         logger.info("[WebServer] Interactive map: http://%s:%d/map", ip, self._port)
+        logger.info("[WebServer] Settings page:   http://%s:%d/settings", ip, self._port)
 
     def _run(self) -> None:
         try:
-            from flask import Flask, Response, jsonify
+            from flask import Flask, Response, jsonify, session, request, redirect, url_for, render_template_string
         except ImportError:
             logger.error(
                 "[WebServer] Flask not installed — web server disabled. "
@@ -152,7 +173,18 @@ class FlightWebServer:
         app = Flask(__name__)
         logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
+        # ── Secret key for session cookies ──────────────────────────────
+        if self._runtime is not None:
+            s = self._runtime.get()
+            app.secret_key = (
+                s.web_settings_secret_key
+                or f"pisugar-fx-{self._port}"  # deterministic fallback
+            )
+        else:
+            app.secret_key = f"pisugar-fx-{self._port}"
+
         state = self._state
+        runtime = self._runtime
 
         @app.route("/")
         def index():
@@ -208,8 +240,7 @@ class FlightWebServer:
         @app.route("/android-chrome-512x512.png")
         @app.route("/site.webmanifest")
         def static_asset():
-            from flask import request as freq
-            filename = freq.path.lstrip("/")
+            filename = request.path.lstrip("/")
             filepath = os.path.join(_ASSETS_DIR, filename)
             ext = os.path.splitext(filename)[1].lower()
             mime = _MIME.get(ext, "application/octet-stream")
@@ -223,6 +254,185 @@ class FlightWebServer:
                 )
             except FileNotFoundError:
                 return Response(b"not found", status=404)
+
+        # ── Settings auth: login / logout ───────────────────────────────
+
+        @app.route("/login", methods=["GET", "POST"])
+        def settings_login():
+            error = None
+            next_url = request.args.get("next", "/settings")
+
+            if request.method == "POST":
+                username = request.form.get("username", "").strip()
+                password = request.form.get("password", "").strip()
+
+                rs = runtime.get()
+                if (username == rs.web_settings_user
+                        and password == rs.web_settings_password):
+                    session["settings_authenticated"] = True
+                    session["settings_user"] = username
+                    return redirect(next_url)
+                else:
+                    error = "Invalid credentials"
+
+            return render_template_string(LOGIN_TEMPLATE, error=error, next=next_url)
+
+        @app.route("/logout")
+        def settings_logout():
+            session.clear()
+            return redirect("/")
+
+        # ── Settings page: GET (display) / POST (save) ──────────────────
+
+        @app.route("/settings", methods=["GET"])
+        @_require_settings_auth
+        def settings_page():
+            rs = runtime.get()
+            settings_dict = {
+                k: v for k, v in runtime.as_dict().items()
+                if k not in ("web_settings_user", "web_settings_password", "web_settings_secret_key")
+            }
+            return render_template_string(
+                SETTINGS_TEMPLATE,
+                settings=settings_dict,
+                errors=None,
+                saved=False,
+            )
+
+        @app.route("/settings", methods=["POST"])
+        @_require_settings_auth
+        def settings_save():
+            from flight.config import save_settings
+
+            rs = runtime.get()
+            errors = []
+            updates = {}
+
+            # ── Helper: parse int ──
+            def get_int(key, min_val=None, max_val=None):
+                raw = request.form.get(key, "").strip()
+                if raw == "":
+                    errors.append(f"{key} is required")
+                    return None
+                try:
+                    val = int(raw)
+                except ValueError:
+                    errors.append(f"{key} must be an integer")
+                    return None
+                if min_val is not None and val < min_val:
+                    errors.append(f"{key} must be >= {min_val}")
+                    return None
+                if max_val is not None and val > max_val:
+                    errors.append(f"{key} must be <= {max_val}")
+                    return None
+                return val
+
+            # ── Helper: parse bool (checkbox present = True) ──
+            def get_bool(key):
+                return key in request.form
+
+            # ── Brightness ──
+            brightness = get_int("brightness", 0, 100)
+            if brightness is not None:
+                updates["brightness"] = brightness
+
+            # ── Auto-dim ──
+            auto_dim_after = get_int("auto_dim_after_seconds", 0)
+            if auto_dim_after is not None:
+                updates["auto_dim_after_seconds"] = auto_dim_after
+
+            auto_dim_br = get_int("auto_dim_brightness", 0, 100)
+            if auto_dim_br is not None:
+                updates["auto_dim_brightness"] = auto_dim_br
+
+            # ── Refresh interval ──
+            refresh = get_int("refresh_interval_seconds", 1, 60)
+            if refresh is not None:
+                updates["refresh_interval_seconds"] = refresh
+
+            # ── Trail ──
+            trail_len = get_int("trail_length", 0, 20)
+            if trail_len is not None:
+                updates["trail_length"] = trail_len
+
+            updates["trail_enabled"] = get_bool("trail_enabled")
+
+            # ── Ghost ──
+            updates["ghost_enabled"] = get_bool("ghost_enabled")
+            ghost_hold = get_int("ghost_holdover_seconds", 0)
+            if ghost_hold is not None:
+                updates["ghost_holdover_seconds"] = ghost_hold
+
+            # ── Callsign rule ──
+            callsign_rule = request.form.get("callsign_rule", "").strip()
+            valid_callsign_rules = ("nearest", "highest", "busiest")
+            if callsign_rule not in valid_callsign_rules:
+                errors.append(f"callsign_rule must be one of: {', '.join(valid_callsign_rules)}")
+            else:
+                updates["callsign_rule"] = callsign_rule
+
+            # ── LED thresholds ──
+            thresholds = []
+            for i, label in enumerate(["green_max", "yellow_max", "orange_max"]):
+                val = get_int(f"led_threshold_{i}", 1)
+                if val is not None:
+                    thresholds.append(val)
+            if len(thresholds) == 3:
+                # Validate ascending order
+                if thresholds[0] >= thresholds[1] or thresholds[1] >= thresholds[2]:
+                    errors.append("LED thresholds must be in ascending order (green < yellow < orange)")
+                else:
+                    updates["led_thresholds"] = thresholds
+
+            # ── JPEG quality ──
+            jpeg_q = get_int("web_mirror_jpeg_quality", 1, 95)
+            if jpeg_q is not None:
+                updates["web_mirror_jpeg_quality"] = jpeg_q
+
+            # ── Handle errors ──
+            if errors:
+                settings_dict = {
+                    k: v for k, v in runtime.as_dict().items()
+                    if k not in ("web_settings_user", "web_settings_password", "web_settings_secret_key")
+                }
+                return render_template_string(
+                    SETTINGS_TEMPLATE,
+                    settings=settings_dict,
+                    errors=errors,
+                    saved=False,
+                ), 400
+
+            # ── Save to config file ──
+            try:
+                save_settings(self._config_path, updates)
+                # Reload runtime so the form reflects the new values on re-render
+                from flight.config import load_config
+                new_config = load_config(self._config_path)
+                runtime.update(new_config.settings)
+            except Exception as e:
+                errors.append(f"Failed to save settings: {e}")
+                settings_dict = {
+                    k: v for k, v in runtime.as_dict().items()
+                    if k not in ("web_settings_user", "web_settings_password", "web_settings_secret_key")
+                }
+                return render_template_string(
+                    SETTINGS_TEMPLATE,
+                    settings=settings_dict,
+                    errors=errors,
+                    saved=False,
+                ), 500
+
+            # ── Success ──
+            settings_dict = {
+                k: v for k, v in runtime.as_dict().items()
+                if k not in ("web_settings_user", "web_settings_password", "web_settings_secret_key")
+            }
+            return render_template_string(
+                SETTINGS_TEMPLATE,
+                settings=settings_dict,
+                errors=None,
+                saved=True,
+            )
 
         app.run(host="0.0.0.0", port=self._port, threaded=True, use_reloader=False)
 
@@ -251,6 +461,458 @@ def _blank_jpeg() -> bytes:
         return buf.getvalue()
     except Exception:
         return b""
+
+
+# ---------------------------------------------------------------------------
+# HTML: Login page
+# ---------------------------------------------------------------------------
+
+LOGIN_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pisugar-fx &middot; Login</title>
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d1117; color: #e6edf3;
+      font-family: 'Courier New', monospace;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 100vh; padding: 24px 16px;
+    }
+    .card {
+      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+      padding: 32px; width: 100%; max-width: 360px;
+      box-shadow: 0 0 24px rgba(0,229,255,.06);
+    }
+    h1 {
+      color: #00e5ff; font-size: 1.1rem; letter-spacing: .2em;
+      text-transform: uppercase; text-align: center; margin-bottom: 24px;
+    }
+    .subtitle {
+      color: #8b949e; font-size: .72rem; text-align: center;
+      margin-bottom: 20px;
+    }
+    .field { margin-bottom: 16px; }
+    label { display: block; color: #8b949e; font-size: .75rem; margin-bottom: 4px; }
+    input[type="text"], input[type="password"] {
+      width: 100%; padding: 10px 12px; border: 1px solid #30363d;
+      border-radius: 6px; background: #0d1117; color: #e6edf3;
+      font-family: 'Courier New', monospace; font-size: .85rem;
+      outline: none; transition: border-color .2s;
+    }
+    input[type="text"]:focus, input[type="password"]:focus {
+      border-color: #00e5ff;
+    }
+    .error {
+      background: rgba(255,50,50,.15); border: 1px solid #ff4444;
+      color: #ff4444; padding: 8px 12px; border-radius: 6px;
+      font-size: .75rem; margin-bottom: 16px; text-align: center;
+    }
+    button {
+      width: 100%; padding: 10px; background: #1c4a3a;
+      border: 1px solid #00e5ff44; color: #e6edf3;
+      border-radius: 6px; font-family: 'Courier New', monospace;
+      font-size: .85rem; cursor: pointer; transition: background .2s, border-color .2s;
+    }
+    button:hover { background: #00e5ff22; border-color: #00e5ff; }
+    .back-link {
+      display: block; text-align: center; margin-top: 16px;
+      color: #8b949e; font-size: .72rem; text-decoration: none;
+    }
+    .back-link:hover { color: #00e5ff; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>pisugar-fx</h1>
+    <div class="subtitle">Settings Login</div>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="POST" action="/login?next={{ next }}">
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit">Sign In</button>
+    </form>
+    <a class="back-link" href="/">&larr; Back to Radar</a>
+  </div>
+</body>
+</html>"""
+
+
+# ---------------------------------------------------------------------------
+# HTML: Settings page
+# ---------------------------------------------------------------------------
+
+SETTINGS_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pisugar-fx &middot; Settings</title>
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d1117; color: #e6edf3;
+      font-family: 'Courier New', monospace;
+      display: flex; flex-direction: column; align-items: center;
+      min-height: 100vh; padding: 24px 16px;
+    }
+    .container { width: 100%; max-width: 600px; }
+
+    /* ── Nav bar ── */
+    nav {
+      display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+      margin-bottom: 24px;
+    }
+    nav a {
+      color: #00e5ff; text-decoration: none;
+      border: 1px solid #1c4a3a; padding: 6px 14px; border-radius: 5px;
+      font-size: .75rem; transition: background .2s, border-color .2s;
+    }
+    nav a:hover { background: #1c4a3a; border-color: #00e5ff; }
+    nav a.active { border-color: #00e5ff; background: #00e5ff11; }
+    nav a.logout { color: #ff8c00; border-color: #ff8c0044; }
+    nav a.logout:hover { background: #ff8c0011; border-color: #ff8c00; }
+
+    /* ── Banner ── */
+    .banner {
+      padding: 10px 14px; border-radius: 6px; font-size: .78rem;
+      margin-bottom: 16px; text-align: center;
+    }
+    .banner.success {
+      background: rgba(0,200,80,.12); border: 1px solid #00c85044;
+      color: #00c850;
+    }
+    .banner.error {
+      background: rgba(255,50,50,.12); border: 1px solid #ff444444;
+      color: #ff4444;
+    }
+
+    /* ── Card sections ── */
+    .section {
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+      padding: 20px; margin-bottom: 16px;
+    }
+    .section-title {
+      color: #00e5ff; font-size: .72rem; letter-spacing: .15em;
+      text-transform: uppercase; margin-bottom: 16px;
+      padding-bottom: 8px; border-bottom: 1px solid #30363d;
+    }
+
+    /* ── Form fields ── */
+    .field { margin-bottom: 14px; }
+    .field:last-child { margin-bottom: 0; }
+    .field label {
+      display: flex; justify-content: space-between; align-items: center;
+      color: #e6edf3; font-size: .8rem; margin-bottom: 4px;
+    }
+    .field label .hint {
+      color: #8b949e; font-size: .68rem;
+    }
+    .field input[type="number"],
+    .field select {
+      width: 100%; padding: 8px 10px; border: 1px solid #30363d;
+      border-radius: 6px; background: #0d1117; color: #e6edf3;
+      font-family: 'Courier New', monospace; font-size: .82rem;
+      outline: none; transition: border-color .2s;
+    }
+    .field input[type="number"]:focus,
+    .field select:focus { border-color: #00e5ff; }
+
+    /* ── Range slider ── */
+    .range-wrap {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .range-wrap input[type="range"] {
+      flex: 1; appearance: none; height: 6px; border-radius: 3px;
+      background: #30363d; outline: none;
+    }
+    .range-wrap input[type="range"]::-webkit-slider-thumb {
+      appearance: none; width: 16px; height: 16px; border-radius: 50%;
+      background: #00e5ff; border: none; cursor: pointer;
+    }
+    .range-wrap input[type="range"]::-moz-range-thumb {
+      width: 16px; height: 16px; border-radius: 50%;
+      background: #00e5ff; border: none; cursor: pointer;
+    }
+    .range-value {
+      min-width: 32px; text-align: center; color: #00e5ff;
+      font-size: .85rem; font-weight: bold;
+    }
+
+    /* ── Toggle switch ── */
+    .toggle-wrap {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .toggle-wrap input[type="checkbox"] {
+      appearance: none; width: 40px; height: 22px; border-radius: 11px;
+      background: #30363d; border: 1px solid #484f58; cursor: pointer;
+      position: relative; transition: background .2s, border-color .2s;
+      flex-shrink: 0;
+    }
+    .toggle-wrap input[type="checkbox"]:checked {
+      background: #00e5ff33; border-color: #00e5ff;
+    }
+    .toggle-wrap input[type="checkbox"]::before {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: #8b949e; transition: transform .2s, background .2s;
+    }
+    .toggle-wrap input[type="checkbox"]:checked::before {
+      transform: translateX(18px); background: #00e5ff;
+    }
+    .toggle-label {
+      font-size: .8rem; color: #e6edf3;
+    }
+
+    /* ── Read-only field ── */
+    .field.readonly .value {
+      color: #8b949e; font-size: .82rem; padding: 4px 0;
+    }
+    .field.readonly .restart-asterisk {
+      color: #ff8c00; font-size: .7rem; margin-left: 4px;
+    }
+
+    /* ── Threshold row ── */
+    .threshold-row {
+      display: flex; gap: 10px; flex-wrap: wrap;
+    }
+    .threshold-row .field {
+      flex: 1; min-width: 100px;
+    }
+    .threshold-row .field label {
+      font-size: .7rem; color: #8b949e;
+    }
+
+    /* ── Footer ── */
+    .footer-note {
+      color: #8b949e; font-size: .68rem; text-align: center;
+      margin-top: 16px; line-height: 1.6;
+    }
+    .footer-note em { color: #ff8c00; font-style: normal; }
+
+    /* ── Save button ── */
+    .save-wrap { text-align: center; margin-top: 8px; }
+    button {
+      padding: 10px 36px; background: #1c4a3a;
+      border: 1px solid #00e5ff44; color: #e6edf3;
+      border-radius: 6px; font-family: 'Courier New', monospace;
+      font-size: .85rem; cursor: pointer;
+      transition: background .2s, border-color .2s;
+    }
+    button:hover { background: #00e5ff22; border-color: #00e5ff; }
+
+    /* ── Mobile friendly ── */
+    @media (max-width: 480px) {
+      body { padding: 16px 12px; }
+      .section { padding: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    {# Nav #}
+    <nav>
+      <a href="/">&#x1F4E1;&nbsp; Radar</a>
+      <a href="/map">&#x2708;&nbsp; Map</a>
+      <a href="/settings" class="active">&#x2699;&#xFE0F;&nbsp; Settings</a>
+      <a href="/logout" class="logout">&#x21BA;&nbsp; Logout</a>
+    </nav>
+
+    {# Success banner #}
+    {% if saved %}
+      <div class="banner success">&#x2714;&#xFE0F; Settings saved. Changes apply within 10 seconds.</div>
+    {% endif %}
+
+    {# Error banner #}
+    {% if errors %}
+      <div class="banner error">
+        {% for e in errors %}
+          <div>{{ e }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <form method="POST" action="/settings">
+      {# ── DISPLAY ── #}
+      <div class="section">
+        <div class="section-title">Display</div>
+
+        <div class="field">
+          <label>Brightness <span class="hint">0-100</span></label>
+          <div class="range-wrap">
+            <input type="range" id="brightness" name="brightness"
+                   min="0" max="100" value="{{ settings.brightness }}">
+            <span class="range-value" id="brightness-val">{{ settings.brightness }}</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="auto_dim_after_seconds">Auto-dim after <span class="hint">seconds</span></label>
+          <input type="number" id="auto_dim_after_seconds" name="auto_dim_after_seconds"
+                 min="0" step="30" value="{{ settings.auto_dim_after_seconds }}">
+        </div>
+
+        <div class="field">
+          <label>Auto-dim brightness <span class="hint">0-100</span></label>
+          <div class="range-wrap">
+            <input type="range" id="auto_dim_brightness" name="auto_dim_brightness"
+                   min="0" max="100" value="{{ settings.auto_dim_brightness }}">
+            <span class="range-value" id="auto_dim_brightness-val">{{ settings.auto_dim_brightness }}</span>
+          </div>
+        </div>
+      </div>
+
+      {# ── AIRCRAFT ── #}
+      <div class="section">
+        <div class="section-title">Aircraft</div>
+
+        <div class="field">
+          <label for="refresh_interval_seconds">Refresh interval <span class="hint">1-60 seconds</span></label>
+          <input type="number" id="refresh_interval_seconds" name="refresh_interval_seconds"
+                 min="1" max="60" value="{{ settings.refresh_interval_seconds }}">
+        </div>
+
+        <div class="field">
+          <label for="trail_length">Trail length <span class="hint">0-20 points</span></label>
+          <input type="number" id="trail_length" name="trail_length"
+                 min="0" max="20" value="{{ settings.trail_length }}">
+        </div>
+
+        <div class="field">
+          <div class="toggle-wrap">
+            <input type="checkbox" id="trail_enabled" name="trail_enabled"
+                   {% if settings.trail_enabled %}checked{% endif %}>
+            <label class="toggle-label" for="trail_enabled">Trails enabled</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="toggle-wrap">
+            <input type="checkbox" id="ghost_enabled" name="ghost_enabled"
+                   {% if settings.ghost_enabled %}checked{% endif %}>
+            <label class="toggle-label" for="ghost_enabled">Ghost (projected) positions enabled</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="ghost_holdover_seconds">Ghost holdover <span class="hint">seconds</span></label>
+          <input type="number" id="ghost_holdover_seconds" name="ghost_holdover_seconds"
+                 min="0" value="{{ settings.ghost_holdover_seconds }}">
+        </div>
+
+        <div class="field">
+          <label for="callsign_rule">Callsign display rule</label>
+          <select id="callsign_rule" name="callsign_rule">
+            <option value="nearest" {% if settings.callsign_rule == 'nearest' %}selected{% endif %}>Nearest</option>
+            <option value="highest" {% if settings.callsign_rule == 'highest' %}selected{% endif %}>Highest</option>
+            <option value="busiest" {% if settings.callsign_rule == 'busiest' %}selected{% endif %}>Busiest</option>
+          </select>
+        </div>
+      </div>
+
+      {# ── LED DENSITY THRESHOLDS ── #}
+      <div class="section">
+        <div class="section-title">LED Density Thresholds</div>
+        <div class="threshold-row">
+          <div class="field">
+            <label for="led_threshold_0">Green up to</label>
+            <input type="number" id="led_threshold_0" name="led_threshold_0"
+                   min="1" value="{{ settings.led_thresholds[0] }}">
+          </div>
+          <div class="field">
+            <label for="led_threshold_1">Yellow up to</label>
+            <input type="number" id="led_threshold_1" name="led_threshold_1"
+                   min="1" value="{{ settings.led_thresholds[1] }}">
+          </div>
+          <div class="field">
+            <label for="led_threshold_2">Orange up to</label>
+            <input type="number" id="led_threshold_2" name="led_threshold_2"
+                   min="1" value="{{ settings.led_thresholds[2] }}">
+          </div>
+        </div>
+        <div style="color:#8b949e;font-size:.68rem;margin-top:8px;">
+          Red: above {{ settings.led_thresholds[2] }} (auto)
+        </div>
+      </div>
+
+      {# ── WEB SERVER ── #}
+      <div class="section">
+        <div class="section-title">Web Server</div>
+
+        <div class="field">
+          <label>JPEG quality <span class="hint">1-95</span></label>
+          <div class="range-wrap">
+            <input type="range" id="web_mirror_jpeg_quality" name="web_mirror_jpeg_quality"
+                   min="1" max="95" value="{{ settings.web_mirror_jpeg_quality }}">
+            <span class="range-value" id="web_mirror_jpeg_quality-val">{{ settings.web_mirror_jpeg_quality }}</span>
+          </div>
+        </div>
+      </div>
+
+      {# ── READ-ONLY (restart required) ── #}
+      <div class="section">
+        <div class="section-title">Read-Only <em class="restart-asterisk">(restart required)</em></div>
+
+        <div class="field readonly">
+          <label>Source</label>
+          <div class="value">{{ settings.source }}<span class="restart-asterisk">*</span></div>
+        </div>
+        <div class="field readonly">
+          <label>Web server port</label>
+          <div class="value">{{ settings.web_server_port }}<span class="restart-asterisk">*</span></div>
+        </div>
+        <div class="field readonly">
+          <label>Web server enabled</label>
+          <div class="value">{{ settings.web_server_enabled }}<span class="restart-asterisk">*</span></div>
+        </div>
+        <div class="field readonly">
+          <label>Radius</label>
+          <div class="value">{{ settings.radius_miles or 'per-location' }} mi<span class="restart-asterisk">*</span></div>
+        </div>
+      </div>
+
+      <p class="footer-note">
+        <em>*</em> These settings require a service restart to take effect.
+        Edit <code>config/flight_locations.json</code> directly.
+      </p>
+
+      <div class="save-wrap">
+        <button type="submit">Save Settings</button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    // Live-update range slider values
+    document.querySelectorAll('input[type="range"]').forEach(function(slider) {
+      var display = document.getElementById(slider.id + '-val');
+      if (display) {
+        slider.addEventListener('input', function() {
+          display.textContent = this.value;
+        });
+      }
+    });
+  </script>
+</body>
+</html>"""
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +990,7 @@ def _html_index() -> str:
         '    <a href="/map"> &#x2708;&nbsp; Interactive Map</a>\n'
         '    <a href="/aircraft.json"> &#x1F4E1;&nbsp; Raw JSON</a>\n'
         '    <a href="/status"> &#x2139;&#xFE0F;&nbsp; Status</a>\n'
+        '    <a href="/settings"> &#x2699;&#xFE0F;&nbsp; Settings</a>\n'
         "  </nav>\n"
         "\n"
         "  <script>\n"
@@ -460,14 +1123,19 @@ def _html_map() -> str:
         "      color: #00ffcc; font-size: .74rem; padding: 7px 16px;\n"
         "      white-space: nowrap; pointer-events: none;\n"
         "    }\n"
-        "    #back-btn {\n"
+        "\n"
+        "    /* Bottom-left links */\n"
+        "    .bottom-links {\n"
         "      position: absolute; z-index: 1000;\n"
         "      bottom: 14px; left: 14px;\n"
+        "      display: flex; gap: 8px; flex-wrap: wrap;\n"
+        "    }\n"
+        "    .bottom-links a {\n"
         "      background: rgba(0,0,0,.82); border: 1px solid #1c4a3a; border-radius: 5px;\n"
         "      color: #00ffcc; font-size: .74rem; padding: 7px 16px;\n"
         "      text-decoration: none; transition: background .2s;\n"
         "    }\n"
-        "    #back-btn:hover { background: #1c4a3a; }\n"
+        "    .bottom-links a:hover { background: #1c4a3a; }\n"
         "\n"
         "    /* ── Mobile: panel slides up from bottom ── */\n"
         "    @media (max-width: 600px) {\n"
@@ -487,7 +1155,10 @@ def _html_map() -> str:
         '    <div id="map-wrap">\n'
         '      <div id="map"></div>\n'
         '      <div id="info-bar"><span style="color:#00e676">&#x2708;</span> pisugar-fx &nbsp;&middot;&nbsp; <span id="count">loading&hellip;</span></div>\n'
-        '      <a id="back-btn" href="/">&larr; Radar Mirror</a>\n'
+        '      <div class="bottom-links">\n'
+        '        <a href="/">&larr; Radar Mirror</a>\n'
+        '        <a href="/settings">&#x2699;&#xFE0F; Settings</a>\n'
+        "      </div>\n"
         "    </div>\n"
         '    <div id="detail">\n'
         '      <div id="detail-inner">\n'
@@ -697,11 +1368,21 @@ if __name__ == "__main__":
     assert 'href="/map"' in idx,    "index: /map link missing"
     assert 'href="/aircraft.json"' in idx, "index: /aircraft.json link missing"
     assert 'href="/status"' in idx, "index: /status link missing"
+    assert 'href="/settings"' in idx, "index: /settings link missing"
     assert "leaflet" in mp.lower(), "map: leaflet missing"
     assert "openDetail" in mp,      "map: openDetail function missing"
     assert "closeDetail" in mp,     "map: closeDetail function missing"
     assert "d-squawk" in mp,        "map: squawk panel element missing"
     assert "d-rssi" in mp,          "map: rssi panel element missing"
+    assert 'href="/settings"' in mp, "map: /settings link missing"
     print("All smoke tests passed.")
     print(f"  _html_index() : {len(idx):,} chars")
     print(f"  _html_map()   : {len(mp):,} chars")
+    # Validate SETTINGS_TEMPLATE and LOGIN_TEMPLATE
+    assert "brightness" in SETTINGS_TEMPLATE, "settings: brightness field missing"
+    assert "callsign_rule" in SETTINGS_TEMPLATE, "settings: callsign_rule missing"
+    assert "led_thresholds" in SETTINGS_TEMPLATE, "settings: led_thresholds missing"
+    assert "Save Settings" in SETTINGS_TEMPLATE, "settings: save button missing"
+    assert "Sign In" in LOGIN_TEMPLATE, "login: sign in button missing"
+    print("  LOGIN_TEMPLATE  : ok")
+    print("  SETTINGS_TEMPLATE : ok")

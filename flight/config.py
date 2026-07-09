@@ -76,6 +76,11 @@ class FlightTrackerSettings:
     # radius_miles override applied at next FlightRadarScreen construction
     radius_miles: Optional[int] = None
 
+    # /settings web auth credentials
+    web_settings_user: str = "admin"
+    web_settings_password: str = "changeme"
+    web_settings_secret_key: str = ""  # empty = Flask generates one at startup
+
 
 @dataclass
 class AuthConfig:
@@ -194,6 +199,10 @@ def load_config(config_path: Optional[str] = None) -> FlightTrackerConfig:
         auto_dim_after_seconds=int(sd.get("auto_dim_after_seconds", 300)),
         default_view_mode=str(sd.get("default_view_mode", "radar")),
         radius_miles=radius_miles_override,
+        # /settings web auth
+        web_settings_user=str(sd.get("web_settings_user", "admin")),
+        web_settings_password=str(sd.get("web_settings_password", "changeme")),
+        web_settings_secret_key=str(sd.get("web_settings_secret_key", "")),
     )
 
     # ── Parse auth ───────────────────────────────────────────────────────────
