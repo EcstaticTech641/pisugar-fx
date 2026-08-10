@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pisugar-fx — Embedded Hardware Utilities & Flight-Tracking Instrumentation</title>
+  <meta name="description" content="Embedded hardware utilities for PiSugar battery management, e-ink displays, and flight-tracking instrumentation." />
+  
+  <!-- Strict relative path resolution -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+
+  <!-- Site Header -->
+  <header>
+    <h1>pisugar-fx</h1>
+    <span class="badge badge-primary">v0.1.1</span>
+    <span class="badge badge-secondary">RonLab / EcstaticTech641</span>
+  </header>
+
+  <main>
+    <!-- Section 1: Hero Section -->
+    <section class="hero-section">
+      <div class="hero-badges">
+        <span class="badge badge-primary badge-dot">Hardware Telemetry</span>
+        <span class="badge badge-secondary">PiSugar Stack</span>
+        <span class="badge badge-info">WhisPlay 1.69" LCD</span>
+        <span class="badge badge-success">ADS-B Radar</span>
+      </div>
+      <h1 class="hero-title">pisugar-fx</h1>
+      <p class="hero-subtitle">
+        Embedded hardware utilities for PiSugar battery management, e-ink displays, and flight-tracking instrumentation.
+      </p>
+      <div class="hero-actions">
+        <a href="https://github.com/EcstaticTech641/pisugar-fx/releases" class="btn btn-primary btn-lg" target="_blank" rel="noopener noreferrer">
+          Download Latest Release
+        </a>
+        <a href="https://github.com/EcstaticTech641/pisugar-fx" class="btn btn-secondary btn-lg" target="_blank" rel="noopener noreferrer">
+          View GitHub Repo
+        </a>
+      </div>
+    </section>
+
+    <!-- Section 2: Visual Proof Container -->
+    <section>
+      <h2>Visual Hardware Proof</h2>
+      <p class="muted">
+        Hardware design layouts, display telemetry renderers, and Defcon aerospace badge pinout specifications.
+      </p>
+      
+      <div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));">
+        
+        <!-- Media Placeholder Box 1 -->
+        <div class="card" style="padding: var(--space-4);">
+          <h3 class="card-title" style="margin-bottom: var(--space-3);">PiSugar Hardware &amp; Display Stack</h3>
+          <div class="media-placeholder-box" style="aspect-ratio: 4 / 3; min-height: 280px;">
+            <!-- PLACEHOLDER: 800x600 High-res photo of PiSugar battery stack and e-ink flight tracker display -->
+            <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <div class="placeholder-text">
+              <strong>[ 800 × 600 Media Placeholder ]</strong><br />
+              High-res photo of PiSugar battery stack &amp; e-ink flight tracker display
+            </div>
+          </div>
+        </div>
+
+        <!-- Media Placeholder Box 2 -->
+        <div class="card" style="padding: var(--space-4);">
+          <h3 class="card-title" style="margin-bottom: var(--space-3);">Defcon Aerospace Hardware Layout</h3>
+          <div class="media-placeholder-box" style="aspect-ratio: 16 / 9; min-height: 280px;">
+            <!-- PLACEHOLDER: 800x450 Defcon aerospace badge hardware layout and pinout diagram -->
+            <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+              <path d="M2 17l10 5 10-5"></path>
+              <path d="M2 12l10 5 10-5"></path>
+            </svg>
+            <div class="placeholder-text">
+              <strong>[ 800 × 450 Media Placeholder ]</strong><br />
+              Defcon aerospace badge hardware layout &amp; pinout diagram
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Section 3: Quick-Start Section -->
+    <section>
+      <h2>Quick-Start Installation</h2>
+      <p class="muted">
+        Deploy `pisugar-fx` hardware instrumentation with a single terminal command or manually via git and pip.
+      </p>
+
+      <div class="quick-start-block">
+        <div class="block-header">
+          <span class="block-title">Automated One-Line Terminal Setup</span>
+        </div>
+        <div class="pre-wrap">
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+          <pre><code><span class="tok-comment"># One-line terminal setup script</span>
+<span class="tok-function">curl</span> -sSL https://dev.ronlab.site/pisugar-fx/install.sh | <span class="tok-function">bash</span></code></pre>
+        </div>
+      </div>
+
+      <div class="quick-start-block" style="margin-top: var(--space-6);">
+        <div class="block-header">
+          <span class="block-title">Standard Manual Installation Block</span>
+        </div>
+        <div class="pre-wrap">
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+          <pre><code><span class="tok-comment"># Clone repository and set up dependencies</span>
+<span class="tok-function">git clone</span> https://github.com/EcstaticTech641/pisugar-fx.git
+<span class="tok-function">cd</span> pisugar-fx
+<span class="tok-function">pip install</span> -r requirements.txt
+
+<span class="tok-comment"># Run validation test suite before hardware boot</span>
+<span class="tok-function">python3</span> tests/flight_test.py
+
+<span class="tok-comment"># Launch the flight tracker application</span>
+<span class="tok-function">python3</span> flight_tracker.py --debug</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: Configuration Reference & Hardware BOM -->
+    <section class="config-section">
+      <h2>Configuration Reference &amp; Hardware Specifications</h2>
+      <p class="muted">
+        Complete hardware Bill of Materials (BOM), environment configuration parameters, and GPIO/I2C pinout specifications.
+      </p>
+
+      <!-- Sub-section: Hardware BOM -->
+      <h3 style="margin-top: var(--space-8);">Hardware Bill of Materials (BOM)</h3>
+      <div class="table-container">
+        <table class="config-table">
+          <thead>
+            <tr>
+              <th>Component Category</th>
+              <th>Hardware Model / Module</th>
+              <th>Technical Specifications</th>
+              <th>Role &amp; Interface</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Compute Unit</strong></td>
+              <td><code>Raspberry Pi Zero 2 W</code></td>
+              <td>Quad-core ARM Cortex-A53 @ 1.0GHz, 512MB LPDDR2, 802.11b/g/n Wi-Fi, Bluetooth 4.2</td>
+              <td>Primary host CPU running <code>flight_tracker.py</code> &amp; daemon services</td>
+            </tr>
+            <tr>
+              <td><strong>Battery Management</strong></td>
+              <td><code>PiSugar 2 / PiSugar 3 Stack</code></td>
+              <td>Custom IC telemetry, real-time clock (RTC), onboard power button, soft shutdown triggers</td>
+              <td>I2C bus power telemetry (0x57/0x75), battery status &amp; power cycle management</td>
+            </tr>
+            <tr>
+              <td><strong>Display Hardware</strong></td>
+              <td><code>WhisPlay 1.69" LCD / E-Paper</code></td>
+              <td>ST7789 controller, 240×280 hardware resolution, RGB565 color format, tactile user button</td>
+              <td>SPI bus radar screen, dead-reckoning flight markers, status LED density indicator</td>
+            </tr>
+            <tr>
+              <td><strong>Radio Receiver</strong></td>
+              <td><code>RTL-SDR USB Dongle + Antenna</code></td>
+              <td>R820T2 tuner, 1090MHz ADS-B decoding via <code>readsb</code> or <code>dump1090</code></td>
+              <td>Local SDR mode live aircraft telemetry decoding (writing to <code>/run/readsb/aircraft.json</code>)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Sub-section: Parameter Table -->
+      <h3 style="margin-top: var(--space-8);">Environment &amp; Parameter Reference</h3>
+      <div class="table-container">
+        <table class="config-table">
+          <thead>
+            <tr>
+              <th>Parameter Name</th>
+              <th>Default Value</th>
+              <th>Env Var / Config Key</th>
+              <th>Description &amp; Operational Usage</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>source</code></td>
+              <td><code>"local"</code></td>
+              <td><code>DATA_SOURCE</code></td>
+              <td>Operational data source: <code>"local"</code> (RTL-SDR antenna) or <code>"api"</code> (airplanes.live fallback)</td>
+            </tr>
+            <tr>
+              <td><code>AIRPORT_ORIGIN</code></td>
+              <td><code>"OKC"</code></td>
+              <td><code>AIRPORT_ORIGIN</code></td>
+              <td>Origin airport IATA code for default center coordinates and flight origin tracking</td>
+            </tr>
+            <tr>
+              <td><code>AIRPORT_DEST</code></td>
+              <td><code>"DFW"</code></td>
+              <td><code>AIRPORT_DEST</code></td>
+              <td>Destination airport IATA code for flight routing and distance vector calculations</td>
+            </tr>
+            <tr>
+              <td><code>REFRESH_INTERVAL</code></td>
+              <td><code>5</code></td>
+              <td><code>REFRESH_INTERVAL_SECONDS</code></td>
+              <td>Frequency in seconds to poll aircraft data source and re-render display buffer</td>
+            </tr>
+            <tr>
+              <td><code>display_duration_seconds</code></td>
+              <td><code>30</code></td>
+              <td><code>DISPLAY_DURATION_SECONDS</code></td>
+              <td>Screen dwell time before auto-cycling to next location entry (API mode)</td>
+            </tr>
+            <tr>
+              <td><code>brightness</code></td>
+              <td><code>100</code></td>
+              <td><code>DISPLAY_BRIGHTNESS</code></td>
+              <td>WhisPlay LCD backlight level percentage (0 to 100)</td>
+            </tr>
+            <tr>
+              <td><code>ghost_enabled</code></td>
+              <td><code>true</code></td>
+              <td><code>GHOST_ENABLED</code></td>
+              <td>Enable dead-reckoning ghost markers for aircraft experiencing signal loss</td>
+            </tr>
+            <tr>
+              <td><code>web_server_enabled</code></td>
+              <td><code>true</code></td>
+              <td><code>WEB_SERVER_ENABLED</code></td>
+              <td>Enable background Flask web mirror daemon (serves <code>/snapshot.jpg</code> &amp; <code>/map</code> on port 5000)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Sub-section: I2C & GPIO Pinout Table -->
+      <h3 style="margin-top: var(--space-8);">I2C &amp; Pinout Configuration</h3>
+      <div class="table-container">
+        <table class="config-table">
+          <thead>
+            <tr>
+              <th>Bus / Protocol</th>
+              <th>GPIO Header Pin</th>
+              <th>Signal Identifier</th>
+              <th>Hardware Interface &amp; Target Subsystem</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>I2C Bus</strong></td>
+              <td>GPIO 2 (Pin 3)</td>
+              <td><code>SDA</code></td>
+              <td>PiSugar battery RTC &amp; power IC data line (I2C address 0x57/0x75)</td>
+            </tr>
+            <tr>
+              <td><strong>I2C Bus</strong></td>
+              <td>GPIO 3 (Pin 5)</td>
+              <td><code>SCL</code></td>
+              <td>PiSugar battery RTC &amp; power IC clock line</td>
+            </tr>
+            <tr>
+              <td><strong>SPI Bus</strong></td>
+              <td>GPIO 10 (Pin 19)</td>
+              <td><code>SPI_MOSI</code></td>
+              <td>WhisPlay ST7789 LCD master-out data line</td>
+            </tr>
+            <tr>
+              <td><strong>SPI Bus</strong></td>
+              <td>GPIO 11 (Pin 23)</td>
+              <td><code>SPI_SCLK</code></td>
+              <td>WhisPlay ST7789 LCD serial clock line</td>
+            </tr>
+            <tr>
+              <td><strong>PWM Control</strong></td>
+              <td>GPIO 18 (Pin 12)</td>
+              <td><code>RGB_LED_PWM</code></td>
+              <td>WhisPlay onboard RGB density indicator LED (Blue/Green/Yellow/Orange/Red)</td>
+            </tr>
+            <tr>
+              <td><strong>GPIO Input</strong></td>
+              <td>GPIO 24 (Pin 18)</td>
+              <td><code>TACTILE_BTN</code></td>
+              <td>WhisPlay tactile button (single-press location switch / refresh trigger)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Key Feature Cards -->
+    <section>
+      <h2>System Architecture &amp; Features</h2>
+      <div class="card-grid">
+        <div class="card">
+          <h3 class="card-title">Real-Time ADS-B Radar</h3>
+          <p class="card-body">
+            Reads local SDR decoded frames directly from <code>/run/readsb/aircraft.json</code> every 1 second without internet dependencies.
+          </p>
+          <div class="card-footer-row">
+            <span class="badge badge-success">Local SDR Mode</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">Dead-Reckoning Ghosts</h3>
+          <p class="card-body">
+            Projects ghost trajectory vectors and fading trails for tracked aircraft during temporary antenna signal loss.
+          </p>
+          <div class="card-footer-row">
+            <span class="badge badge-info">Track History</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">Flask Web Mirror &amp; Map</h3>
+          <p class="card-body">
+            Embedded Flask server running on port 5000 provides live JPEG snapshots and Leaflet.js interactive dark maps over Wi-Fi.
+          </p>
+          <div class="card-footer-row">
+            <span class="badge badge-primary">Port 5000</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">WhisPlay RGB LED Indicator</h3>
+          <p class="card-body">
+            Onboard RGB status LED signals sky density at a glance: Blue (0 aircraft), Green (1-5), Yellow (6-15), Orange (16-30), Red (&gt;30).
+          </p>
+          <div class="card-footer-row">
+            <span class="badge badge-warning">Hardware Telemetry</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Site Footer -->
+  <footer>
+    <p>
+      &copy; 2026 RonLab / EcstaticTech641. Released under the Apache 2.0 License.<br />
+      Hosted on GitHub Pages at <a href="https://dev.ronlab.site/pisugar-fx/">dev.ronlab.site/pisugar-fx/</a>
+    </p>
+  </footer>
+
+  <!-- Dark Mode Toggle Button -->
+  <button id="darkModeToggle" aria-label="Toggle dark mode">🌙 Dark Mode</button>
+
+  <script>
+    // Theme Toggle Handler
+    const toggleBtn = document.getElementById('darkModeToggle');
+    const storedTheme = localStorage.getItem('theme');
+    if (storedTheme === 'dark' || (!storedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.body.classList.add('dark-mode');
+      toggleBtn.textContent = '☀️ Light Mode';
+    }
+    toggleBtn.addEventListener('click', () => {
+      document.body.classList.toggle('dark-mode');
+      const isDark = document.body.classList.contains('dark-mode');
+      toggleBtn.textContent = isDark ? '☀️ Light Mode' : '🌙 Dark Mode';
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    });
+
+    // Copy to Clipboard Utility for Code Snippets
+    function copyCode(btn) {
+      const pre = btn.nextElementSibling;
+      const codeText = pre.innerText;
+      navigator.clipboard.writeText(codeText).then(() => {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>
