@@ -8,7 +8,7 @@
 #
 # Usage: sudo bash setup.sh
 #
-# Author: ron (EcstaticTech641)
+# Author: ron (EcstaticTech)
 # Date: 2026-06
 ################################################################################
 
@@ -155,7 +155,7 @@ phase_pisugar_repo() {
         git pull origin master
     else
         log_info "Cloning pisugar-fx repository..."
-        git clone https://github.com/EcstaticTech641/pisugar-fx.git "$repo_dir"
+        git clone https://github.com/EcstaticTech/pisugar-fx.git "$repo_dir"
         cd "$repo_dir"
     fi
     
@@ -293,7 +293,7 @@ EOF
     cat > /etc/systemd/system/pisugar-fx.service << EOF
 [Unit]
 Description=pisugar-fx ADS-B Flight Tracker Badge
-Documentation=https://github.com/EcstaticTech641/pisugar-fx
+Documentation=https://github.com/EcstaticTech/pisugar-fx
 After=readsb.service
 Wants=dump1090.service
 
